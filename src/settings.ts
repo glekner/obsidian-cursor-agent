@@ -14,9 +14,10 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName("cursor-agent path")
+			.setName("Cursor-agent path")
 			.setDesc(
-				"Optional absolute path to cursor-agent (recommended if Obsidian doesn’t inherit your PATH)."
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				"Absolute path to Cursor-agent (recommended if Obsidian doesn't inherit your PATH)."
 			)
 			.addText((text) => {
 				text.setPlaceholder("/opt/homebrew/bin/cursor-agent")
@@ -30,7 +31,7 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("API key")
 			.setDesc(
-				"Used only if not logged in. Prefer login or CURSOR_API_KEY env var."
+				"Only used if not logged in. Prefer login or the environment variable."
 			)
 			.addText((text) => {
 				text.inputEl.type = "password";
@@ -68,11 +69,11 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 						timeoutMs: 10_000,
 					});
 					if (res.code === 0) {
-						new Notice("cursor-agent status: ok");
+						new Notice("Status check passed");
 					} else {
-						new Notice("cursor-agent status failed (see console)");
+						new Notice("Status check failed (see console)");
 					}
-					console.log("[cursor-agent status]", res);
+					console.debug("[cursor-agent status]", res);
 				});
 			})
 			.addButton((btn) => {
@@ -81,7 +82,7 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 					const res = await openLoginFlow(this.plugin.settings, cwd);
 					if (res.code === 0) new Notice("Login flow complete");
 					else new Notice("Login flow exited (see console)");
-					console.log("[cursor-agent login]", res);
+					console.debug("[cursor-agent login]", res);
 				});
 			});
 
@@ -145,7 +146,8 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 				"Used when starting a new conversation (not when resuming)."
 			)
 			.addText((text) => {
-				text.setPlaceholder("gpt-5")
+				// eslint-disable-next-line obsidianmd/ui/sentence-case
+				text.setPlaceholder("composer-1")
 					.setValue(this.plugin.settings.defaultModel)
 					.onChange(async (value) => {
 						this.plugin.settings.defaultModel = value.trim();
