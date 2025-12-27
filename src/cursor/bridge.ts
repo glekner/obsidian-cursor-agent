@@ -7,6 +7,9 @@ import {
 	AssistantMessageEvent,
 	ToolCallEvent,
 	ResultEvent,
+	McpServerApprovalChoice,
+	McpServerApprovalRequest,
+	McpServerInfo,
 } from "../types";
 import { getAuthConfig } from "./auth";
 import { spawnCursorAgentPiped, execCursorAgent } from "./cli";
@@ -25,12 +28,16 @@ type CursorBridgeEvents = {
 	error: [Error];
 	close: [number | null];
 	ready: [];
+	mcpApprovalRequired: [McpServerApprovalRequest];
 };
 
 export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 	private process: ChildProcessWithoutNullStreams | null = null;
 	private buffer = "";
 	private sessionId: string | null = null;
+	private mcpProbe = "";
+	private mcpApprovalPending = false;
+	private mcpApprovalEmitted = false;
 
 	constructor(private options: CursorBridgeOptions) {
 		super();
@@ -99,8 +106,8 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 			if (model) args.push("--model", model);
 		}
 
-		if (this.options.settings.permissionMode === "yolo") {
-			args.push("--yolo");
+		if (this.options.settings.permissionMode === "force") {
+			args.push("--force");
 		}
 
 		this.process = await spawnCursorAgentPiped(args, {
@@ -109,6 +116,9 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 		});
 
 		this.buffer = "";
+		this.mcpProbe = "";
+		this.mcpApprovalPending = false;
+		this.mcpApprovalEmitted = false;
 		this.setupProcessHandlers();
 		this.emit("ready");
 	}
@@ -122,7 +132,9 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 
 		let stderr = "";
 		this.process.stderr?.on("data", (data: Buffer) => {
-			stderr += data.toString();
+			const text = data.toString();
+			stderr += text;
+			this.ingestMcpProbe(text);
 		});
 
 		this.process.on("error", (err) => {
@@ -136,6 +148,7 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 			}
 			this.emit("close", code);
 			this.process = null;
+			this.mcpApprovalPending = false;
 		});
 	}
 
@@ -147,6 +160,28 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 				// ignore
 			}
 			this.process = null;
+			this.mcpApprovalPending = false;
+		}
+	}
+
+	submitMcpServerApproval(choice: McpServerApprovalChoice): boolean {
+		if (!this.process || !this.mcpApprovalPending) return false;
+		const key =
+			choice === "approveAll"
+				? "a"
+				: choice === "continueWithoutApproval"
+				? "c"
+				: "q";
+		try {
+			this.process.stdin.write(key);
+			this.mcpApprovalPending = false;
+			return true;
+		} catch (err) {
+			this.emit(
+				"error",
+				err instanceof Error ? err : new Error(String(err))
+			);
+			return false;
 		}
 	}
 
@@ -159,6 +194,7 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 	}
 
 	private handleData(chunk: string): void {
+		this.ingestMcpProbe(chunk);
 		this.buffer += chunk;
 		const lines = this.buffer.split("\n");
 
@@ -175,6 +211,42 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 				// Non-JSON output, ignore
 			}
 		}
+	}
+
+	private ingestMcpProbe(text: string): void {
+		if (this.mcpApprovalEmitted) return;
+		this.mcpProbe += text;
+		if (this.mcpProbe.length > 50_000) {
+			this.mcpProbe = this.mcpProbe.slice(-50_000);
+		}
+
+		const req = this.tryParseMcpApprovalPrompt(this.mcpProbe);
+		if (!req) return;
+
+		this.mcpApprovalEmitted = true;
+		this.mcpApprovalPending = true;
+		this.emit("mcpApprovalRequired", req);
+	}
+
+	private tryParseMcpApprovalPrompt(
+		text: string
+	): McpServerApprovalRequest | null {
+		const cleaned = stripAnsi(text).replace(/\r/g, "");
+		const idx = cleaned.lastIndexOf("MCP Server Approval Required");
+		if (idx === -1) return null;
+		const tail = cleaned.slice(idx);
+		if (!tail.includes("Approve all servers")) return null;
+		if (
+			!tail.includes("Continue without approval") &&
+			!tail.includes("Continue without")
+		) {
+			return null;
+		}
+
+		return {
+			servers: parseMcpServerList(tail),
+			rawText: tail.trim(),
+		};
 	}
 
 	private handleEvent(event: CursorEvent): void {
@@ -209,6 +281,44 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 		if (!instructions) return prompt;
 		return `${instructions}\n\n${prompt}`;
 	}
+}
+
+function stripAnsi(input: string): string {
+	// eslint-disable-next-line no-control-regex
+	return input.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function parseMcpServerList(text: string): McpServerInfo[] {
+	const out: McpServerInfo[] = [];
+	const seen = new Set<string>();
+
+	const lines = text.split("\n");
+	const startIdx = lines.findIndex((l) =>
+		l.toLowerCase().includes("need to be approved")
+	);
+	if (startIdx === -1) return out;
+
+	for (let i = startIdx + 1; i < lines.length; i++) {
+		const rawLine = lines[i];
+		if (!rawLine) continue;
+		const line = rawLine.trim();
+		if (!line) continue;
+		if (line.includes("Approve all servers")) break;
+		if (line.startsWith("[")) break;
+
+		const m = line.match(
+			/^[•*-]\s*([^(]+?)(?:\s*\(url:\s*([^)]+)\))?\s*$/i
+		);
+		if (!m || !m[1]) continue;
+		const name = m[1].trim();
+		const url = m[2]?.trim();
+		const key = `${name}::${url ?? ""}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({ name, url: url || undefined });
+	}
+
+	return out;
 }
 
 export async function listConversations(

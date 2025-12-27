@@ -15,7 +15,7 @@ export interface SystemInitEvent {
 	cwd: string;
 	session_id: string;
 	model: string;
-	permissionMode: "default" | "yolo";
+	permissionMode: string;
 }
 
 export interface MessageContent {
@@ -116,6 +116,21 @@ export type CursorEvent =
 	| ToolCallEvent
 	| ResultEvent;
 
+export interface McpServerInfo {
+	name: string;
+	url?: string;
+}
+
+export interface McpServerApprovalRequest {
+	servers: McpServerInfo[];
+	rawText: string;
+}
+
+export type McpServerApprovalChoice =
+	| "approveAll"
+	| "continueWithoutApproval"
+	| "quit";
+
 // Plugin Settings
 export interface CursorAgentSettings {
 	apiKey: string;
@@ -124,7 +139,7 @@ export interface CursorAgentSettings {
 	 */
 	cursorAgentPath: string;
 	showToolCalls: boolean;
-	permissionMode: "default" | "yolo";
+	permissionMode: "default" | "force";
 	customInstructions: string;
 	workingDirectory: string;
 	defaultModel: string;

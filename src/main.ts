@@ -206,8 +206,22 @@ export default class CursorAgentChatPlugin extends Plugin {
 		}
 
 		const data = raw as PersistedDataV1 & Partial<CursorAgentSettings>;
-		const settings = data.settings ?? data;
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
+		const settings = (data.settings ??
+			data) as Partial<CursorAgentSettings> & {
+			permissionMode?: unknown;
+		};
+
+		const rawPermissionMode = settings.permissionMode;
+		const permissionMode: CursorAgentSettings["permissionMode"] =
+			rawPermissionMode === "force"
+				? "force"
+				: rawPermissionMode === "default"
+				? "default"
+				: DEFAULT_SETTINGS.permissionMode;
+
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings, {
+			permissionMode,
+		});
 		this.lastSessionId =
 			typeof data.lastSessionId === "string" ? data.lastSessionId : null;
 	}

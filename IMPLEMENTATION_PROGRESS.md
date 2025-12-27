@@ -81,17 +81,18 @@ mcp_Context7_get-library-docs(context7CompatibleLibraryID="/obsidianmd/obsidian-
     -   [x] Streaming text updates (message-level)
     -   [x] Auto-scroll behavior
 
--   [ ] **Chat Header** (`src/ui/chat-header.ts`)
+-   [x] **Chat Header** (in `src/ui/chat-view.ts`)
 
-    -   [ ] Model picker dropdown
-    -   [ ] New conversation button
-    -   [ ] Resume conversation button
+    -   [x] Model picker dropdown (in input footer, like Copilot)
+    -   [x] New conversation button
+    -   [x] Chat history button/menu
 
--   [ ] **Message Renderer** (`src/ui/message-renderer.ts`)
+-   [x] **Message Renderer** (in `src/ui/chat-view.ts`)
 
-    -   [ ] User message styling
-    -   [ ] Assistant message with markdown
-    -   [ ] Tool call indicators (collapsible)
+    -   [x] User message styling
+    -   [x] Assistant message with markdown
+    -   [x] Tool call indicators (collapsible)
+    -   [x] Timestamps on messages
 
 -   [x] **Input Area** (`src/ui/input-area.ts`)
     -   [x] Textarea with auto-resize
@@ -130,8 +131,10 @@ mcp_Context7_get-library-docs(context7CompatibleLibraryID="/obsidianmd/obsidian-
 
     -   [x] Chat container layout
     -   [x] Message bubbles
-    -   [x] Tool call styling
-    -   [ ] Model picker dropdown
+    -   [x] Tool call styling (collapsible)
+    -   [x] Model picker dropdown
+    -   [x] Chat history menu
+    -   [x] Timestamps and message meta
     -   [x] Dark/light theme support
 
 -   [x] **Manifest** (`manifest.json`)

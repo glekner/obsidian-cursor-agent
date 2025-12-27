@@ -163,6 +163,19 @@ export class SessionManager {
 	}
 
 	/**
+	 * Delete a single message by id
+	 */
+	deleteMessage(messageId: string): void {
+		if (!this.currentSession) return;
+		const sessionId = this.currentSession.id;
+		const messages = this.messageHistory.get(sessionId);
+		if (messages) {
+			const idx = messages.findIndex((m) => m.id === messageId);
+			if (idx !== -1) messages.splice(idx, 1);
+		}
+	}
+
+	/**
 	 * Delete a conversation from local history
 	 */
 	deleteConversation(sessionId: string): void {

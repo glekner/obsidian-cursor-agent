@@ -99,14 +99,14 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName("Permission mode")
+			.setName("File writes")
 			.setDesc(
-				"Default asks for confirmation; yolo tries to auto-approve (if supported by your CLI)."
+				"Default is read-only. Enable to allow file writes (adds --force)."
 			)
 			.addDropdown((dropdown) => {
 				dropdown
-					.addOption("default", "Default")
-					.addOption("yolo", "Yolo")
+					.addOption("default", "Read-only")
+					.addOption("force", "Allow writes (--force)")
 					.setValue(this.plugin.settings.permissionMode)
 					.onChange(async (value) => {
 						this.plugin.settings.permissionMode =
