@@ -30,6 +30,25 @@ function createId(): string {
 	return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function mergeStreamingText(prev: string, incoming: string): string {
+	const next = incoming ?? "";
+	if (!next) return prev;
+	if (!prev) return next;
+	if (next === prev) return prev;
+
+	// Some stream formats send the full message-so-far each time.
+	if (next.startsWith(prev)) return next;
+	if (prev.startsWith(next)) return prev;
+
+	// Try to merge overlapping suffix/prefix to avoid duplicated spans.
+	const maxOverlap = Math.min(prev.length, next.length);
+	for (let i = maxOverlap; i > 0; i--) {
+		if (prev.endsWith(next.slice(0, i))) return prev + next.slice(i);
+	}
+
+	return prev + next;
+}
+
 function formatToolCall(e: ToolCallEvent): string | null {
 	if (e.subtype === "started") {
 		const read = e.tool_call.readToolCall?.args?.path;
@@ -63,8 +82,10 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	});
 
 	const pendingMessagesRef = useRef<ChatMessage[]>([]);
+	const lastFinalizedRef = useRef<string>("");
+	const streamingTextRef = useRef<string>("");
+	const selectedModelRef = useRef<string>(selectedModel);
 
-	const currentSessionId = plugin.bridge.getSessionId();
 	const displayModels = useMemo(() => {
 		const models = [...AVAILABLE_MODELS];
 		const selected = selectedModel.trim();
@@ -86,6 +107,8 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		plugin.bridge.setSessionId(null);
 		plugin.sessionManager.clearCurrentSession();
 		pendingMessagesRef.current = [];
+		lastFinalizedRef.current = "";
+		streamingTextRef.current = "";
 		setMessages([]);
 		setStreamingText("");
 		void plugin.saveSettings();
@@ -98,8 +121,10 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	};
 
 	const finalizeStreamingMessage = () => {
-		const content = streamingText.trim();
-		if (!content) return;
+		const content = streamingTextRef.current.trim();
+		if (!content || content === lastFinalizedRef.current) return;
+
+		lastFinalizedRef.current = content;
 
 		const msg: ChatMessage = {
 			id: createId(),
@@ -112,26 +137,31 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 			plugin.sessionManager.addMessage(msg);
 		else pendingMessagesRef.current.push(msg);
 
+		streamingTextRef.current = "";
 		setStreamingText("");
 		reloadHistory();
 	};
 
 	const onInit = (e: SystemInitEvent) => {
-		plugin.sessionManager.setCurrentSession(e.session_id, e.model);
+		plugin.sessionManager.setCurrentSession(
+			e.session_id,
+			selectedModelRef.current
+		);
 		for (const m of pendingMessagesRef.current)
 			plugin.sessionManager.addMessage(m);
 		pendingMessagesRef.current = [];
 
-		if (e.model) {
-			setSelectedModel(e.model);
-		}
 		void plugin.saveSettings();
 		reloadHistory();
 	};
 
 	const onAssistant = (e: AssistantMessageEvent) => {
 		const text = e.message.content.map((c) => c.text).join("");
-		setStreamingText((prev) => prev + text);
+		setStreamingText((prev) => {
+			const merged = mergeStreamingText(prev, text);
+			streamingTextRef.current = merged;
+			return merged;
+		});
 	};
 
 	const onToolCall = (e: ToolCallEvent) => {
@@ -180,7 +210,9 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		}
 
 		setIsGenerating(true);
+		streamingTextRef.current = "";
 		setStreamingText("");
+		lastFinalizedRef.current = "";
 		setInput("");
 
 		const resumeId = plugin.bridge.getSessionId();
@@ -228,14 +260,11 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	useEffect(() => {
 		onApi({ sendPrompt, newConversation, reloadHistory, stop });
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [
-		onApi,
-		selectedModel,
-		includeActiveNote,
-		activeFile,
-		streamingText,
-		currentSessionId,
-	]);
+	}, [onApi, selectedModel, includeActiveNote, activeFile]);
+
+	useEffect(() => {
+		selectedModelRef.current = selectedModel;
+	}, [selectedModel]);
 
 	useEffect(() => {
 		plugin.bridge.on("init", onInit);
@@ -267,20 +296,6 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		};
 	}, [plugin.app.workspace]);
 
-	const allMessages = useMemo(() => {
-		if (!streamingText) return messages;
-		return [
-			...messages,
-			{
-				id: "streaming",
-				role: "assistant",
-				content: streamingText,
-				timestamp: Date.now(),
-				isStreaming: true,
-			} satisfies ChatMessage,
-		];
-	}, [messages, streamingText]);
-
 	return (
 		<div className="tw-flex tw-size-full tw-flex-col tw-overflow-hidden tw-p-2">
 			<div className="tw-mb-2 tw-flex tw-items-center tw-justify-between">
@@ -295,7 +310,11 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 			</div>
 
 			<div className="tw-flex-1 tw-overflow-hidden tw-rounded-md tw-border tw-border-border">
-				<ChatMessages messages={allMessages} />
+				<ChatMessages
+					chatHistory={messages}
+					currentAiMessage={streamingText}
+					loading={isGenerating}
+				/>
 			</div>
 
 			<div className="tw-mt-2 tw-flex tw-flex-col tw-gap-2 tw-rounded-md tw-border tw-border-border tw-p-2">
@@ -327,7 +346,8 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 					disabled={isGenerating}
 					onChange={(e) => setInput(e.target.value)}
 					onKeyDown={(e) => {
-						if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+						if (e.key === "Enter" && !e.shiftKey) {
+							e.preventDefault();
 							void sendPrompt(input);
 						}
 					}}

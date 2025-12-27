@@ -11,6 +11,24 @@ interface ChatSingleMessageProps {
 	onDelete?: () => void;
 }
 
+function preprocessAssistantMarkdown(markdown: string): string {
+	let text = markdown;
+
+	// Prevent execution of dataview/tasks blocks inside rendered markdown.
+	text = text.replace(/```dataview(\s*(?:\n|$))/g, "```text$1");
+	text = text.replace(/```dataviewjs(\s*(?:\n|$))/g, "```javascript$1");
+	text = text.replace(/```tasks(\s*(?:\n|$))/g, "```text$1");
+
+	// Normalize LaTeX delimiters.
+	text = text
+		.replace(/\\\[\s*/g, "$$")
+		.replace(/\s*\\\]/g, "$$")
+		.replace(/\\\(\s*/g, "$")
+		.replace(/\s*\\\)/g, "$");
+
+	return text;
+}
+
 export const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
 	message,
 	isStreaming,
@@ -24,8 +42,8 @@ export const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
 	const isUser = message.role === "user";
 	const isSystem = message.role === "system";
 
-	const copyToClipboard = useCallback(() => {
-		navigator.clipboard.writeText(message.content).then(() => {
+	const copyToClipboard = useCallback(async () => {
+		await navigator.clipboard.writeText(message.content).then(() => {
 			setIsCopied(true);
 			setTimeout(() => setIsCopied(false), 2000);
 		});
@@ -44,31 +62,32 @@ export const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
 	}, [app, message.content]);
 
 	useEffect(() => {
-		if (!contentRef.current || isUser) return;
+		if (isUser || isSystem) return;
+		if (!contentRef.current) return;
 
-		if (!componentRef.current) {
-			componentRef.current = new Component();
-		}
+		if (!componentRef.current) componentRef.current = new Component();
 
 		contentRef.current.innerHTML = "";
 		const activeFile = app.workspace.getActiveFile();
 		const sourcePath = activeFile?.path ?? "";
-
-		MarkdownRenderer.render(
+		const processed = preprocessAssistantMarkdown(message.content);
+		void MarkdownRenderer.render(
 			app,
-			message.content,
+			processed,
 			contentRef.current,
 			sourcePath,
 			componentRef.current
 		);
+	}, [app, message.content, isUser, isSystem]);
 
+	useEffect(() => {
 		return () => {
 			if (componentRef.current) {
 				componentRef.current.unload();
 				componentRef.current = null;
 			}
 		};
-	}, [app, message.content, isUser]);
+	}, []);
 
 	if (isSystem) {
 		return (
@@ -83,7 +102,8 @@ export const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
 			<div
 				className={cn(
 					"tw-group tw-mx-2 tw-rounded-md tw-p-2",
-					isUser && "tw-border tw-border-solid tw-border-border tw-bg-secondary/30"
+					isUser &&
+						"tw-border tw-border-solid tw-border-border tw-bg-secondary/30"
 				)}
 			>
 				<div className="tw-flex tw-max-w-full tw-flex-col tw-gap-1 tw-overflow-hidden">

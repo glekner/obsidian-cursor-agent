@@ -78,6 +78,7 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 			promptText,
 			"--output-format",
 			"stream-json",
+			"--stream-partial-output",
 			"--approve-mcps",
 			...authResult.args,
 		];
