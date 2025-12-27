@@ -10,7 +10,10 @@ import { SessionManager } from "./cursor/session";
 import { CursorAgentSettingTab } from "./settings";
 import { DEFAULT_SETTINGS, type CursorAgentSettings } from "./types";
 import { resolveWorkingDirectory } from "./utils/path-utils";
-import { CursorChatView, VIEW_TYPE_CURSOR_CHAT } from "./ui/chat-view";
+import {
+	CursorChatView,
+	VIEW_TYPE_CURSOR_CHAT,
+} from "./components/CursorChatView";
 
 type SessionExport = ReturnType<SessionManager["exportData"]>;
 

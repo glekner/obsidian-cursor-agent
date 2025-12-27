@@ -17,6 +17,7 @@ const context = await esbuild.context({
 	},
 	entryPoints: ["src/main.ts"],
 	bundle: true,
+	jsx: "automatic",
 	external: [
 		"obsidian",
 		"electron",
@@ -33,7 +34,7 @@ const context = await esbuild.context({
 		"@lezer/lr",
 		...builtinModules],
 	format: "cjs",
-	target: "es2018",
+	target: "es2020",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,

@@ -164,3 +164,11 @@ export interface SessionInfo {
 	model: string;
 	startTime: number;
 }
+
+// Chat API exposed by Chat component
+export interface CursorChatApi {
+	sendPrompt: (prompt: string) => Promise<void>;
+	newConversation: () => void;
+	reloadHistory: () => void;
+	stop: () => void;
+}
