@@ -1,9 +1,9 @@
-import { spawn } from "child_process";
 import { CursorAgentSettings } from "../types";
+import { execCursorAgent } from "./cli";
 
 export interface AuthResult {
 	isAuthenticated: boolean;
-	source: "login" | "api-key" | "none";
+	source: "login" | "api-key" | "env" | "none";
 	args: string[];
 }
 
@@ -11,10 +11,22 @@ export interface AuthResult {
  * Checks if cursor-agent is logged in by running a quick test command.
  * Returns auth args to use when spawning cursor-agent.
  */
-export async function getAuthConfig(settings: CursorAgentSettings): Promise<AuthResult> {
+export async function getAuthConfig(
+	settings: CursorAgentSettings,
+	cwd: string
+): Promise<AuthResult> {
+	const envApiKey = process.env.CURSOR_API_KEY?.trim();
+	if (envApiKey) {
+		return {
+			isAuthenticated: true,
+			source: "env",
+			args: [],
+		};
+	}
+
 	// First, check if CLI is logged in
-	const isLoggedIn = await checkCursorLogin();
-	
+	const isLoggedIn = await checkCursorLogin(settings, cwd);
+
 	if (isLoggedIn) {
 		return {
 			isAuthenticated: true,
@@ -22,16 +34,16 @@ export async function getAuthConfig(settings: CursorAgentSettings): Promise<Auth
 			args: [],
 		};
 	}
-	
+
 	// Fallback to API key from settings
-	if (settings.apiKey) {
+	if (settings.apiKey?.trim()) {
 		return {
 			isAuthenticated: true,
 			source: "api-key",
 			args: ["--api-key", settings.apiKey],
 		};
 	}
-	
+
 	return {
 		isAuthenticated: false,
 		source: "none",
@@ -42,56 +54,53 @@ export async function getAuthConfig(settings: CursorAgentSettings): Promise<Auth
 /**
  * Checks if cursor-agent is installed and accessible.
  */
-export async function isCursorAgentInstalled(): Promise<boolean> {
-	return new Promise((resolve) => {
-		const proc = spawn("cursor-agent", ["--version"], {
-			shell: true,
-			stdio: "pipe",
-		});
-		
-		proc.on("error", () => resolve(false));
-		proc.on("close", (code) => resolve(code === 0));
+export async function isCursorAgentInstalled(
+	settings: CursorAgentSettings,
+	cwd: string
+): Promise<boolean> {
+	const res = await execCursorAgent(["--version"], {
+		cwd,
+		settings,
+		timeoutMs: 5000,
 	});
+	return res.code === 0;
 }
 
 /**
  * Checks if user is logged in via cursor-agent CLI.
  * Runs `cursor-agent` with a minimal prompt and checks if it fails due to auth.
  */
-async function checkCursorLogin(): Promise<boolean> {
-	return new Promise((resolve) => {
-		// Try running with --help which doesn't require auth but verifies installation
-		// For actual login check, we'd need to try a real command
-		// For now, assume logged in if env var or cursor config exists
-		const cursorApiKey = process.env.CURSOR_API_KEY;
-		if (cursorApiKey) {
-			resolve(true);
-			return;
-		}
-		
-		// Check if cursor-agent can run (login state is cached by CLI)
-		const proc = spawn("cursor-agent", ["--help"], {
-			shell: true,
-			stdio: "pipe",
-		});
-		
-		proc.on("error", () => resolve(false));
-		proc.on("close", (code) => {
-			// --help exits 0 if installed, but doesn't confirm login
-			// We'll be optimistic and let the actual request fail if not logged in
-			resolve(code === 0);
-		});
+async function checkCursorLogin(
+	settings: CursorAgentSettings,
+	cwd: string
+): Promise<boolean> {
+	const res = await execCursorAgent(["status"], {
+		cwd,
+		settings,
+		timeoutMs: 5000,
 	});
+	if (res.code !== 0) return false;
+
+	const out = `${res.stdout}\n${res.stderr}`.toLowerCase();
+	if (out.includes("not logged")) return false;
+	if (out.includes("logged in")) return true;
+	if (out.includes("authenticated")) return true;
+
+	// Best-effort: status succeeded and didn't say "not logged in"
+	return true;
 }
 
 /**
  * Opens cursor-agent login flow (interactive).
  */
-export function openLoginFlow(): void {
-	spawn("cursor-agent", ["login"], {
-		shell: true,
-		stdio: "inherit",
-		detached: true,
+export async function openLoginFlow(
+	settings: CursorAgentSettings,
+	cwd: string
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+	const res = await execCursorAgent(["login"], {
+		cwd,
+		settings,
+		timeoutMs: 60_000,
 	});
+	return { code: res.code, stdout: res.stdout, stderr: res.stderr };
 }
-

@@ -1,99 +1,214 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import {
+	Editor,
+	FileSystemAdapter,
+	MarkdownView,
+	Notice,
+	Plugin,
+} from "obsidian";
+import { CursorBridge } from "./cursor/bridge";
+import { SessionManager } from "./cursor/session";
+import { CursorAgentSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, type CursorAgentSettings } from "./types";
+import { resolveWorkingDirectory } from "./utils/path-utils";
+import { CursorChatView, VIEW_TYPE_CURSOR_CHAT } from "./ui/chat-view";
 
-// Remember to rename these classes and interfaces!
+type SessionExport = ReturnType<SessionManager["exportData"]>;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+interface PersistedDataV1 {
+	settings?: Partial<CursorAgentSettings>;
+	sessions?: SessionExport;
+	lastSessionId?: string | null;
+}
+
+export default class CursorAgentChatPlugin extends Plugin {
+	settings: CursorAgentSettings = { ...DEFAULT_SETTINGS };
+	bridge!: CursorBridge;
+	sessionManager!: SessionManager;
+	private lastSessionId: string | null = null;
 
 	async onload() {
-		await this.loadSettings();
+		const raw = (await this.loadData()) as unknown;
+		this.loadFromPersistedData(raw);
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		this.bridge = new CursorBridge({
+			settings: this.settings,
+			workingDirectory: this.getWorkingDirectory(),
+		});
+		this.bridge.setSessionId(this.lastSessionId);
+
+		this.sessionManager = new SessionManager({
+			workingDirectory: this.getWorkingDirectory(),
+			settings: this.settings,
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		const sessions =
+			raw && typeof raw === "object"
+				? (raw as PersistedDataV1).sessions
+				: undefined;
+		if (sessions) this.sessionManager.importData(sessions);
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+		if (
+			this.lastSessionId &&
+			this.sessionManager.getMessages(this.lastSessionId).length > 0
+		) {
+			this.sessionManager.setCurrentSession(
+				this.lastSessionId,
+				this.settings.defaultModel || ""
+			);
+		}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+		this.registerView(
+			VIEW_TYPE_CURSOR_CHAT,
+			(leaf) => new CursorChatView(leaf, this)
+		);
+
+		this.addRibbonIcon("message-circle", "Open cursor chat", () => {
+			void this.openChatView();
+		});
+
+		this.addCommand({
+			id: "cursor-agent-open-chat",
+			name: "Cursor agent: open chat",
+			callback: async () => {
+				await this.openChatView();
+			},
+		});
+
+		this.addCommand({
+			id: "cursor-agent-new-conversation",
+			name: "Cursor agent: new conversation",
+			callback: async () => {
+				const view = await this.openChatView();
+				view.newConversation();
+			},
+		});
+
+		this.addCommand({
+			id: "cursor-agent-send-selection",
+			name: "Cursor agent: send selection",
+			editorCallback: async (editor: Editor, _view: MarkdownView) => {
+				const selection = editor.getSelection().trim();
+				if (!selection) {
+					new Notice("No selection");
+					return;
 				}
-				return false;
-			}
+				const chat = await this.openChatView();
+				await chat.sendPrompt(selection);
+			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addCommand({
+			id: "cursor-agent-resume-last",
+			name: "Cursor agent: resume last conversation",
+			callback: async () => {
+				if (!this.lastSessionId) {
+					new Notice("No previous session");
+					return;
+				}
+				if (this.bridge.isRunning()) {
+					new Notice("Cursor agent is running");
+					return;
+				}
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
+				this.bridge.setSessionId(this.lastSessionId);
+				if (!this.sessionManager.getCurrentSession()) {
+					this.sessionManager.setCurrentSession(
+						this.lastSessionId,
+						this.settings.defaultModel || ""
+					);
+				}
+
+				const chat = await this.openChatView();
+				chat.reloadHistory();
+			},
 		});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.addSettingTab(new CursorAgentSettingTab(this.app, this));
 
+		const onInit = () => {
+			this.lastSessionId = this.bridge.getSessionId();
+			void this.saveSettings();
+		};
+		this.bridge.on("init", onInit);
+		this.register(() => this.bridge.off("init", onInit));
 	}
 
 	onunload() {
+		const leaves = this.app.workspace.getLeavesOfType(
+			VIEW_TYPE_CURSOR_CHAT
+		);
+		for (const leaf of leaves) leaf.detach();
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+	getVaultBasePath(): string {
+		const adapter = this.app.vault.adapter;
+		if (adapter instanceof FileSystemAdapter) return adapter.getBasePath();
+		throw new Error("Vault adapter does not support filesystem access");
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
+	getWorkingDirectory(): string {
+		const basePath = this.getVaultBasePath();
+		try {
+			return resolveWorkingDirectory(
+				basePath,
+				this.settings.workingDirectory
+			);
+		} catch (err) {
+			console.warn(
+				"[cursor-agent] invalid workingDirectory, falling back to vault root",
+				err
+			);
+			return basePath;
+		}
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+	async openChatView(): Promise<CursorChatView> {
+		const existing = this.app.workspace.getLeavesOfType(
+			VIEW_TYPE_CURSOR_CHAT
+		)[0];
+		const leaf =
+			existing ??
+			this.app.workspace.getRightLeaf(false) ??
+			this.app.workspace.getLeaf("tab");
+		if (!leaf) throw new Error("Unable to create workspace leaf");
+		await leaf.setViewState({ type: VIEW_TYPE_CURSOR_CHAT, active: true });
+		await this.app.workspace.revealLeaf(leaf);
+		return leaf.view as unknown as CursorChatView;
 	}
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+	async saveSettings(): Promise<void> {
+		const data: PersistedDataV1 = {
+			settings: this.settings,
+			sessions: this.sessionManager.exportData(),
+			lastSessionId: this.lastSessionId,
+		};
+		await this.saveData(data);
+		this.refreshRuntime();
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	refreshRuntime(): void {
+		const cwd = this.getWorkingDirectory();
+		this.bridge.updateOptions({
+			settings: this.settings,
+			workingDirectory: cwd,
+		});
+		this.sessionManager.updateOptions({
+			settings: this.settings,
+			workingDirectory: cwd,
+		});
+	}
+
+	private loadFromPersistedData(raw: unknown): void {
+		if (!raw || typeof raw !== "object") {
+			this.settings = { ...DEFAULT_SETTINGS };
+			this.lastSessionId = null;
+			return;
+		}
+
+		const data = raw as PersistedDataV1 & Partial<CursorAgentSettings>;
+		const settings = data.settings ?? data;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, settings);
+		this.lastSessionId =
+			typeof data.lastSessionId === "string" ? data.lastSessionId : null;
 	}
 }

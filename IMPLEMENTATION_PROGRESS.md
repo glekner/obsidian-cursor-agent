@@ -73,13 +73,13 @@ mcp_Context7_get-library-docs(context7CompatibleLibraryID="/obsidianmd/obsidian-
 
 ### Phase 3: UI Components
 
--   [ ] **Chat View** (`src/ui/chat-view.ts`)
+-   [x] **Chat View** (`src/ui/chat-view.ts`)
 
-    -   [ ] Register ItemView type
-    -   [ ] Basic container structure
-    -   [ ] Message list rendering
-    -   [ ] Streaming text updates
-    -   [ ] Auto-scroll behavior
+    -   [x] Register ItemView type
+    -   [x] Basic container structure
+    -   [x] Message list rendering
+    -   [x] Streaming text updates (message-level)
+    -   [x] Auto-scroll behavior
 
 -   [ ] **Chat Header** (`src/ui/chat-header.ts`)
 
@@ -93,52 +93,52 @@ mcp_Context7_get-library-docs(context7CompatibleLibraryID="/obsidianmd/obsidian-
     -   [ ] Assistant message with markdown
     -   [ ] Tool call indicators (collapsible)
 
--   [ ] **Input Area** (`src/ui/input-area.ts`)
-    -   [ ] Textarea with auto-resize
-    -   [ ] Send button
-    -   [ ] Keyboard shortcut (Cmd/Ctrl+Enter)
-    -   [ ] Disable during streaming
+-   [x] **Input Area** (`src/ui/input-area.ts`)
+    -   [x] Textarea with auto-resize
+    -   [x] Send button
+    -   [x] Keyboard shortcut (Cmd/Ctrl+Enter)
+    -   [x] Disable during streaming
 
 ### Phase 4: Settings
 
--   [ ] **Settings Tab** (`src/settings.ts`)
-    -   [ ] API key (secret input)
-    -   [ ] Show tool calls toggle
-    -   [ ] Permission mode dropdown
-    -   [ ] Custom instructions textarea
-    -   [ ] Working directory path
+-   [x] **Settings Tab** (`src/settings.ts`)
+    -   [x] API key (secret input)
+    -   [x] Show tool calls toggle
+    -   [x] Permission mode dropdown
+    -   [x] Custom instructions textarea
+    -   [x] Working directory path
 
 ### Phase 5: Plugin Integration
 
--   [ ] **Main Plugin** (`src/main.ts`)
+-   [x] **Main Plugin** (`src/main.ts`)
 
-    -   [ ] Register chat view
-    -   [ ] Add ribbon icon
-    -   [ ] Register commands
-    -   [ ] Load/save settings
-    -   [ ] Cleanup on unload
+    -   [x] Register chat view
+    -   [x] Add ribbon icon
+    -   [x] Register commands
+    -   [x] Load/save settings
+    -   [x] Cleanup on unload
 
 -   [ ] **Commands**
-    -   [ ] Open Cursor chat
-    -   [ ] Send selection to Cursor
-    -   [ ] Resume last conversation
-    -   [ ] New conversation
+    -   [x] Open Cursor chat
+    -   [x] Send selection to Cursor
+    -   [x] Resume last conversation
+    -   [x] New conversation
 
 ### Phase 6: Polish
 
--   [ ] **Styles** (`styles.css`)
+-   [x] **Styles** (`styles.css`)
 
-    -   [ ] Chat container layout
-    -   [ ] Message bubbles
-    -   [ ] Tool call styling
+    -   [x] Chat container layout
+    -   [x] Message bubbles
+    -   [x] Tool call styling
     -   [ ] Model picker dropdown
-    -   [ ] Dark/light theme support
+    -   [x] Dark/light theme support
 
--   [ ] **Manifest** (`manifest.json`)
+-   [x] **Manifest** (`manifest.json`)
 
-    -   [ ] Update plugin ID and name
-    -   [ ] Set `isDesktopOnly: true`
-    -   [ ] Update description
+    -   [x] Update plugin ID and name
+    -   [x] Set `isDesktopOnly: true`
+    -   [x] Update description
 
 -   [ ] **Git Detection** (optional)
     -   [ ] Check if vault is git repo

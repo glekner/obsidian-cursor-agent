@@ -1,7 +1,12 @@
 // Cursor Agent NDJSON Event Types
 // Based on: https://cursor.com/docs/cli/reference/output-format
 
-export type CursorEventType = "system" | "user" | "assistant" | "tool_call" | "result";
+export type CursorEventType =
+	| "system"
+	| "user"
+	| "assistant"
+	| "tool_call"
+	| "result";
 
 export interface SystemInitEvent {
 	type: "system";
@@ -114,6 +119,10 @@ export type CursorEvent =
 // Plugin Settings
 export interface CursorAgentSettings {
 	apiKey: string;
+	/**
+	 * Optional absolute path to the `cursor-agent` binary (recommended on macOS when Obsidian doesn't inherit your shell PATH).
+	 */
+	cursorAgentPath: string;
 	showToolCalls: boolean;
 	permissionMode: "default" | "yolo";
 	customInstructions: string;
@@ -123,6 +132,7 @@ export interface CursorAgentSettings {
 
 export const DEFAULT_SETTINGS: CursorAgentSettings = {
 	apiKey: "",
+	cursorAgentPath: "",
 	showToolCalls: true,
 	permissionMode: "default",
 	customInstructions: "",
@@ -154,4 +164,3 @@ export interface SessionInfo {
 	model: string;
 	startTime: number;
 }
-

@@ -6,3 +6,92 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.cursor-agent-chat {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	gap: 8px;
+	padding: 8px;
+}
+
+.cursor-agent-chat__header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.cursor-agent-chat__title {
+	font-weight: 600;
+}
+
+.cursor-agent-chat__status {
+	opacity: 0.7;
+	font-size: 0.9em;
+	flex: 1;
+	margin-left: 8px;
+}
+
+.cursor-agent-chat__actions button {
+	margin-left: 6px;
+}
+
+.cursor-agent-chat__messages-wrap {
+	flex: 1;
+	overflow: hidden;
+}
+
+.cursor-agent-chat__messages {
+	height: 100%;
+	overflow: auto;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding-right: 4px;
+}
+
+.cursor-agent-chat__message {
+	display: flex;
+}
+
+.cursor-agent-chat__message--user {
+	justify-content: flex-end;
+}
+
+.cursor-agent-chat__message--assistant,
+.cursor-agent-chat__message--system {
+	justify-content: flex-start;
+}
+
+.cursor-agent-chat__bubble {
+	max-width: 90%;
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.cursor-agent-chat__message--user .cursor-agent-chat__bubble {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.cursor-agent-chat__message--system .cursor-agent-chat__bubble {
+	opacity: 0.8;
+	font-size: 0.9em;
+}
+
+.cursor-agent-chat__input-wrap {
+	display: flex;
+	gap: 8px;
+}
+
+.cursor-agent-chat__input {
+	flex: 1;
+	resize: vertical;
+	min-height: 54px;
+}
+
+.cursor-agent-chat__send {
+	white-space: nowrap;
+}

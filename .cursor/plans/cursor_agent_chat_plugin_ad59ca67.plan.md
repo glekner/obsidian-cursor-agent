@@ -4,10 +4,10 @@ overview: Build an Obsidian plugin that provides a chat interface bridging Curso
 todos:
   - id: setup-types
     content: Create TypeScript interfaces for NDJSON event types in types.ts
-    status: pending
+    status: completed
   - id: cursor-bridge
     content: Implement CursorBridge class to spawn cursor-agent and parse stream
-    status: pending
+    status: completed
     dependencies:
       - setup-types
       - auth-helper
@@ -18,12 +18,12 @@ todos:
       - cursor-bridge
   - id: chat-view
     content: Create ItemView for chat sidebar with message rendering
-    status: pending
+    status: completed
     dependencies:
       - cursor-bridge
   - id: input-area
     content: Build chat input area with send functionality
-    status: pending
+    status: completed
     dependencies:
       - chat-view
   - id: chat-header
@@ -33,22 +33,22 @@ todos:
       - chat-view
   - id: auth-helper
     content: Create auth helper to detect CLI login vs fallback to API key
-    status: pending
+    status: completed
   - id: settings-tab
     content: Implement settings tab with API key, permissions, custom instructions
-    status: pending
+    status: completed
   - id: register-commands
     content: Register plugin commands (open chat, send selection, resume)
-    status: pending
+    status: completed
     dependencies:
       - chat-view
       - session-manager
   - id: manifest-update
     content: "Update manifest.json with proper metadata and isDesktopOnly: true"
-    status: pending
+    status: completed
   - id: styles
     content: Add styles.css for chat UI styling
-    status: pending
+    status: completed
     dependencies:
       - chat-view
   - id: git-detection

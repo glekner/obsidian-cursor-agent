@@ -21,7 +21,7 @@ export default tseslint.config(
 	},
 	...obsidianmd.configs.recommended,
 	{
-		files: ["src/cursor/**/*.ts"],
+		files: ["src/**/*.ts"],
 		rules: {
 			"obsidianmd/no-node-builtins": "off",
 		},

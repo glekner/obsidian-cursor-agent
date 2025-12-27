@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from "child_process";
+import type { ChildProcessWithoutNullStreams } from "child_process";
 import { EventEmitter } from "events";
 import {
 	CursorEvent,
@@ -9,6 +9,7 @@ import {
 	ResultEvent,
 } from "../types";
 import { getAuthConfig } from "./auth";
+import { spawnCursorAgentPiped, execCursorAgent } from "./cli";
 
 export interface CursorBridgeOptions {
 	settings: CursorAgentSettings;
@@ -27,24 +28,43 @@ type CursorBridgeEvents = {
 };
 
 export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
-	private process: ChildProcess | null = null;
+	private process: ChildProcessWithoutNullStreams | null = null;
 	private buffer = "";
 	private sessionId: string | null = null;
-	private isInteractive = false;
 
 	constructor(private options: CursorBridgeOptions) {
 		super();
 	}
 
 	/**
-	 * Start an interactive session (keeps process alive for multi-turn chat)
+	 * Update settings/cwd/model without recreating the instance.
 	 */
-	async startSession(): Promise<void> {
+	updateOptions(partial: Partial<CursorBridgeOptions>): void {
+		this.options = { ...this.options, ...partial };
+	}
+
+	/**
+	 * Force the next run to resume from a specific session_id (or clear it to start fresh).
+	 */
+	setSessionId(sessionId: string | null): void {
+		this.sessionId = sessionId;
+	}
+
+	/**
+	 * Run cursor-agent for a single turn. If a session_id is set (or passed in),
+	 * attempts to resume that conversation for the next prompt.
+	 */
+	async send(
+		prompt: string,
+		options?: { resumeSessionId?: string | null }
+	): Promise<void> {
 		if (this.process) {
-			return; // Already running
+			this.emit("error", new Error("cursor-agent is already running"));
+			return;
 		}
 
-		const authResult = await getAuthConfig(this.options.settings);
+		const cwd = this.options.workingDirectory;
+		const authResult = await getAuthConfig(this.options.settings, cwd);
 
 		if (!authResult.isAuthenticated) {
 			this.emit(
@@ -56,129 +76,41 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 			return;
 		}
 
-		const args = ["--output-format", "stream-json", ...authResult.args];
+		const resumeSessionId =
+			options?.resumeSessionId !== undefined
+				? options.resumeSessionId
+				: this.sessionId;
 
-		const model = this.options.model || this.options.settings.defaultModel;
-		if (model) {
-			args.push("--model", model);
-		}
+		const promptText = this.buildPrompt(prompt);
 
-		if (this.options.settings.permissionMode === "yolo") {
-			args.push("--yolo");
-		}
-
-		if (this.options.settings.customInstructions) {
-			args.push(
-				"--instructions",
-				this.options.settings.customInstructions
-			);
-		}
-
-		this.process = spawn("cursor-agent", args, {
-			cwd: this.options.workingDirectory,
-			shell: true,
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-
-		this.isInteractive = true;
-		this.setupProcessHandlers();
-		this.emit("ready");
-	}
-
-	/**
-	 * Send a message to the running interactive session
-	 */
-	sendMessage(prompt: string): void {
-		if (!this.process || !this.process.stdin) {
-			this.emit(
-				"error",
-				new Error("No active session. Call startSession() first.")
-			);
-			return;
-		}
-
-		// Write message to stdin (cursor-agent reads from stdin in interactive mode)
-		this.process.stdin.write(prompt + "\n");
-	}
-
-	/**
-	 * One-shot message (spawns new process, useful for single queries)
-	 */
-	async sendOneShot(prompt: string): Promise<void> {
-		const authResult = await getAuthConfig(this.options.settings);
-
-		if (!authResult.isAuthenticated) {
-			this.emit(
-				"error",
-				new Error(
-					"Not authenticated. Please set API key in settings or login via cursor-agent."
-				)
-			);
-			return;
-		}
-
-		const args = [
+		const args: string[] = [
 			"-p",
-			prompt,
+			promptText,
 			"--output-format",
 			"stream-json",
 			...authResult.args,
 		];
 
-		const model = this.options.model || this.options.settings.defaultModel;
-		if (model) {
-			args.push("--model", model);
+		if (resumeSessionId) {
+			args.push(`--resume=${resumeSessionId}`);
+		} else {
+			const model =
+				this.options.model || this.options.settings.defaultModel;
+			if (model) args.push("--model", model);
 		}
 
 		if (this.options.settings.permissionMode === "yolo") {
 			args.push("--yolo");
 		}
 
-		if (this.options.settings.customInstructions) {
-			args.push(
-				"--instructions",
-				this.options.settings.customInstructions
-			);
-		}
-
-		this.process = spawn("cursor-agent", args, {
+		this.process = await spawnCursorAgentPiped(args, {
 			cwd: this.options.workingDirectory,
-			shell: true,
-			stdio: ["pipe", "pipe", "pipe"],
+			settings: this.options.settings,
 		});
 
-		this.isInteractive = false;
+		this.buffer = "";
 		this.setupProcessHandlers();
-	}
-
-	/**
-	 * Resume a previous conversation
-	 */
-	async resume(sessionId?: string): Promise<void> {
-		const authResult = await getAuthConfig(this.options.settings);
-
-		if (!authResult.isAuthenticated) {
-			this.emit("error", new Error("Not authenticated."));
-			return;
-		}
-
-		const args = sessionId
-			? [
-					`--resume=${sessionId}`,
-					"--output-format",
-					"stream-json",
-					...authResult.args,
-			  ]
-			: ["resume", "--output-format", "stream-json", ...authResult.args];
-
-		this.process = spawn("cursor-agent", args, {
-			cwd: this.options.workingDirectory,
-			shell: true,
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-
-		this.isInteractive = true;
-		this.setupProcessHandlers();
+		this.emit("ready");
 	}
 
 	private setupProcessHandlers(): void {
@@ -188,11 +120,9 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 			this.handleData(data.toString());
 		});
 
+		let stderr = "";
 		this.process.stderr?.on("data", (data: Buffer) => {
-			const errorMsg = data.toString().trim();
-			if (errorMsg) {
-				this.emit("error", new Error(errorMsg));
-			}
+			stderr += data.toString();
 		});
 
 		this.process.on("error", (err) => {
@@ -200,25 +130,24 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 		});
 
 		this.process.on("close", (code) => {
+			const errText = stderr.trim();
+			if (code !== 0 && errText) {
+				this.emit("error", new Error(errText));
+			}
 			this.emit("close", code);
 			this.process = null;
-			this.isInteractive = false;
 		});
 	}
 
 	cancel(): void {
 		if (this.process) {
-			this.process.kill("SIGTERM");
+			try {
+				this.process.kill();
+			} catch {
+				// ignore
+			}
 			this.process = null;
-			this.isInteractive = false;
 		}
-	}
-
-	endSession(): void {
-		if (this.process?.stdin) {
-			this.process.stdin.end();
-		}
-		this.cancel();
 	}
 
 	getSessionId(): string | null {
@@ -227,10 +156,6 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 
 	isRunning(): boolean {
 		return this.process !== null;
-	}
-
-	isInteractiveSession(): boolean {
-		return this.isInteractive;
 	}
 
 	private handleData(chunk: string): void {
@@ -278,32 +203,27 @@ export class CursorBridge extends EventEmitter<CursorBridgeEvents> {
 				break;
 		}
 	}
+
+	private buildPrompt(prompt: string): string {
+		const instructions = this.options.settings.customInstructions?.trim();
+		if (!instructions) return prompt;
+		return `${instructions}\n\n${prompt}`;
+	}
 }
 
-/**
- * List all previous cursor-agent conversations.
- */
-export async function listConversations(cwd: string): Promise<string[]> {
-	return new Promise((resolve, reject) => {
-		const proc = spawn("cursor-agent", ["ls"], {
-			cwd,
-			shell: true,
-			stdio: ["pipe", "pipe", "pipe"],
-		});
-
-		let output = "";
-		proc.stdout?.on("data", (data: Buffer) => {
-			output += data.toString();
-		});
-
-		proc.on("error", reject);
-		proc.on("close", (code) => {
-			if (code === 0) {
-				const lines = output.trim().split("\n").filter(Boolean);
-				resolve(lines);
-			} else {
-				resolve([]);
-			}
-		});
+export async function listConversations(
+	cwd: string,
+	settings: CursorAgentSettings
+): Promise<string[]> {
+	const res = await execCursorAgent(["ls"], {
+		cwd,
+		settings,
+		timeoutMs: 10_000,
 	});
+	if (res.code !== 0) return [];
+	return res.stdout
+		.trim()
+		.split("\n")
+		.map((l) => l.trim())
+		.filter(Boolean);
 }

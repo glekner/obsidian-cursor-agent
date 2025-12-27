@@ -1,5 +1,5 @@
-import { spawn } from "child_process";
-import { SessionInfo, ChatMessage } from "../types";
+import { SessionInfo, ChatMessage, CursorAgentSettings } from "../types";
+import { execCursorAgent } from "./cli";
 
 export interface ConversationSummary {
 	sessionId: string;
@@ -10,6 +10,7 @@ export interface ConversationSummary {
 
 export interface SessionManagerOptions {
 	workingDirectory: string;
+	settings: CursorAgentSettings;
 }
 
 /**
@@ -21,6 +22,10 @@ export class SessionManager {
 	private messageHistory: Map<string, ChatMessage[]> = new Map();
 
 	constructor(private options: SessionManagerOptions) {}
+
+	updateOptions(partial: Partial<SessionManagerOptions>): void {
+		this.options = { ...this.options, ...partial };
+	}
 
 	/**
 	 * Set the current active session (called when bridge emits 'init')
@@ -104,31 +109,19 @@ export class SessionManager {
 	 * List conversations from cursor-agent CLI
 	 */
 	async listCLIConversations(): Promise<string[]> {
-		return new Promise((resolve) => {
-			const proc = spawn("cursor-agent", ["ls"], {
-				cwd: this.options.workingDirectory,
-				shell: true,
-				stdio: ["pipe", "pipe", "pipe"],
-			});
-
-			let output = "";
-			proc.stdout?.on("data", (data: Buffer) => {
-				output += data.toString();
-			});
-
-			proc.on("error", () => resolve([]));
-			proc.on("close", (code) => {
-				if (code === 0) {
-					const lines = output
-						.trim()
-						.split("\n")
-						.filter((line) => line.trim());
-					resolve(lines);
-				} else {
-					resolve([]);
-				}
-			});
+		const res = await execCursorAgent(["ls"], {
+			cwd: this.options.workingDirectory,
+			settings: this.options.settings,
+			timeoutMs: 10_000,
 		});
+
+		if (res.code !== 0) return [];
+
+		return res.stdout
+			.trim()
+			.split("\n")
+			.map((l) => l.trim())
+			.filter(Boolean);
 	}
 
 	/**
