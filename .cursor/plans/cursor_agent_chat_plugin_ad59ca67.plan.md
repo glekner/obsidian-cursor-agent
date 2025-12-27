@@ -13,7 +13,7 @@ todos:
       - auth-helper
   - id: session-manager
     content: Implement session management for resume/list conversations
-    status: pending
+    status: completed
     dependencies:
       - cursor-bridge
   - id: chat-view
@@ -85,6 +85,8 @@ flowchart TB
     CursorCLI -->|git context| GitRepo
 ```
 
+
+
 ## Data Flow
 
 ```mermaid
@@ -110,6 +112,8 @@ sequenceDiagram
     CursorBridge-->>ChatView: conversationComplete()
 ```
 
+
+
 ## File Structure
 
 ```javascript
@@ -129,6 +133,8 @@ src/
   utils/
     path-utils.ts      # Vault/system path conversion
 ```
+
+
 
 ## Key Implementation Details
 
@@ -158,35 +164,7 @@ Registers as `ItemView` in right sidebar:
 
 ### 3. Settings Design
 
-**Settings Tab** ([src/settings.ts](src/settings.ts)):
-
-| Setting | Type | Default | Description |
-
-|---------|------|---------|-------------|
-
-| `apiKey` | string (secret) | "" | Manual API key (only used if not logged in via CLI) |
-
-| `showToolCalls` | toggle | true | Show file read/write activity in chat |
-
-| `permissionMode` | dropdown | "default" | "default" (confirm) or "yolo" (auto-approve) |
-
-| `customInstructions` | textarea | "" | Custom system prompt added to all conversations |
-
-| `workingDirectory` | string | "" | Override cwd (empty = vault root) |
-
-**Chat UI Header** (in [src/ui/chat-view.ts](src/ui/chat-view.ts)):
-
-| Element | Description |
-
-|---------|-------------|
-
-| Model dropdown | Quick model switching (Claude 4 Sonnet, GPT-5, etc.) |
-
-| New chat button | Start fresh conversation |
-
-| Resume button | Resume last conversation |
-
-**Authentication Flow**:
+**Settings Tab** ([src/settings.ts](src/settings.ts)):| Setting | Type | Default | Description ||---------|------|---------|-------------|| `apiKey` | string (secret) | "" | Manual API key (only used if not logged in via CLI) || `showToolCalls` | toggle | true | Show file read/write activity in chat || `permissionMode` | dropdown | "default" | "default" (confirm) or "yolo" (auto-approve) || `customInstructions` | textarea | "" | Custom system prompt added to all conversations || `workingDirectory` | string | "" | Override cwd (empty = vault root) |**Chat UI Header** (in [src/ui/chat-view.ts](src/ui/chat-view.ts)):| Element | Description ||---------|-------------|| Model dropdown | Quick model switching (Claude 4 Sonnet, GPT-5, etc.) || New chat button | Start fresh conversation || Resume button | Resume last conversation |**Authentication Flow**:
 
 1. Check if `cursor-agent` is logged in (via existing credentials)
 2. If not, use `apiKey` from settings with `--api-key` flag
@@ -235,4 +213,3 @@ Registers as `ItemView` in right sidebar:
 ## Risk Considerations
 
 1. **CLI availability**: Settings should validate cursor-agent is installed
-2. **Long-running processes**: Implement cancellation and timeout handling
