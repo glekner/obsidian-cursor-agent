@@ -1,34 +1,26 @@
 import {
 	Component,
+	EventRef,
 	ItemView,
 	MarkdownRenderer,
 	Menu,
 	Notice,
 	setIcon,
+	TFile,
 	WorkspaceLeaf,
 } from "obsidian";
 import type CursorAgentChatPlugin from "../main";
+import { buildPrompt } from "../utils/prompt-builder";
 import type {
 	AssistantMessageEvent,
 	ChatMessage,
-	McpServerApprovalChoice,
-	McpServerApprovalRequest,
 	ResultEvent,
 	SystemInitEvent,
 	ToolCallEvent,
 } from "../types";
-import { McpApprovalModal } from "./mcp-approval-modal";
+import { AVAILABLE_MODELS } from "../cursor/models";
 
 export const VIEW_TYPE_CURSOR_CHAT = "cursor-agent-chat";
-
-// Common cursor-agent models
-const AVAILABLE_MODELS = [
-	"claude-sonnet-4-20250514",
-	"gpt-4.1",
-	"o3",
-	"gemini-2.5-pro",
-	"composer-1",
-];
 
 function createId(): string {
 	return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -49,11 +41,11 @@ export class CursorChatView extends ItemView {
 	private stopButtonEl!: HTMLButtonElement;
 	private statusEl!: HTMLElement;
 	private loadingEl!: HTMLElement;
-	private mcpModal: McpApprovalModal | null = null;
 	private modelPickerEl!: HTMLElement;
 	private modelLabelEl!: HTMLElement;
 	private inputFooterEl!: HTMLElement;
 	private generatingEl!: HTMLElement;
+	private contextAreaEl!: HTMLElement;
 
 	private isRunning = false;
 	private pendingMessages: ChatMessage[] = [];
@@ -70,6 +62,11 @@ export class CursorChatView extends ItemView {
 
 	// Tool call collapse state
 	private toolCallsCollapsed = false;
+
+	// Context state
+	private includeActiveNote = true;
+	private currentActiveFile: TFile | null = null;
+	private activeLeafChangeRef: EventRef | null = null;
 
 	private readonly onInit = (e: SystemInitEvent) => {
 		this.plugin.sessionManager.setCurrentSession(e.session_id, e.model);
@@ -109,11 +106,6 @@ export class CursorChatView extends ItemView {
 	};
 
 	private readonly onResult = (e: ResultEvent) => {
-		if (this.mcpModal) {
-			this.mcpModal.close();
-			this.mcpModal = null;
-		}
-
 		if (this.streamingText) {
 			this.finalizeStreamingMessage();
 		}
@@ -128,11 +120,6 @@ export class CursorChatView extends ItemView {
 	};
 
 	private readonly onError = (err: Error) => {
-		if (this.mcpModal) {
-			this.mcpModal.close();
-			this.mcpModal = null;
-		}
-
 		if (this.streamingText) {
 			this.finalizeStreamingMessage();
 		}
@@ -146,11 +133,6 @@ export class CursorChatView extends ItemView {
 	};
 
 	private readonly onBridgeClose = (code: number | null) => {
-		if (this.mcpModal) {
-			this.mcpModal.close();
-			this.mcpModal = null;
-		}
-
 		if (this.streamingText) {
 			this.finalizeStreamingMessage();
 		}
@@ -163,43 +145,9 @@ export class CursorChatView extends ItemView {
 		this.setStatus(code === null ? "Stopped" : `Exited (${code})`);
 	};
 
-	private readonly onMcpApprovalRequired = (e: McpServerApprovalRequest) => {
-		if (this.mcpModal) return;
-
-		this.hideLoading();
-		this.setStatus("MCP approval required");
-
-		this.mcpModal = new McpApprovalModal(
-			this.app,
-			e,
-			(choice: McpServerApprovalChoice) => {
-				const ok = this.plugin.bridge.submitMcpServerApproval(choice);
-				this.mcpModal = null;
-
-				if (!ok) {
-					// eslint-disable-next-line obsidianmd/ui/sentence-case
-					new Notice("Unable to submit MCP approval");
-					return;
-				}
-
-				if (choice === "quit") {
-					this.setStatus("Stopping…");
-					return;
-				}
-
-				this.setStatus("Running…");
-				this.showLoading();
-			}
-		);
-		this.mcpModal.open();
-	};
-
 	constructor(leaf: WorkspaceLeaf, private plugin: CursorAgentChatPlugin) {
 		super(leaf);
-		this.selectedModel =
-			plugin.settings.defaultModel ||
-			AVAILABLE_MODELS[0] ||
-			"claude-sonnet-4-20250514";
+		this.selectedModel = plugin.settings.defaultModel || "auto";
 	}
 
 	getViewType(): string {
@@ -281,13 +229,19 @@ export class CursorChatView extends ItemView {
 			cls: "cursor-agent-chat__input-wrap",
 		});
 
+		// Context area (above input)
+		this.contextAreaEl = inputWrap.createDiv({
+			cls: "cursor-agent-chat__context-area",
+		});
+		this.updateContextBadge();
+
 		this.inputEl = inputWrap.createEl("textarea", {
 			cls: "cursor-agent-chat__input",
 		});
 		this.inputEl.rows = 3;
-		this.inputEl.placeholder = "Type a message… (⌘/Ctrl+Enter to send)";
+		this.inputEl.placeholder = "Type a message… (Shift+Enter for newline)";
 		this.inputEl.addEventListener("keydown", (evt: KeyboardEvent) => {
-			if ((evt.metaKey || evt.ctrlKey) && evt.key === "Enter") {
+			if (evt.key === "Enter" && !evt.shiftKey) {
 				evt.preventDefault();
 				void this.sendPrompt(this.inputEl.value);
 			}
@@ -359,9 +313,22 @@ export class CursorChatView extends ItemView {
 		this.plugin.bridge.on("result", this.onResult);
 		this.plugin.bridge.on("error", this.onError);
 		this.plugin.bridge.on("close", this.onBridgeClose);
-		this.plugin.bridge.on(
-			"mcpApprovalRequired",
-			this.onMcpApprovalRequired
+
+		// Track active file changes
+		this.currentActiveFile = this.app.workspace.getActiveFile();
+		this.updateContextBadge();
+
+		this.activeLeafChangeRef = this.app.workspace.on(
+			"active-leaf-change",
+			() => {
+				const file = this.app.workspace.getActiveFile();
+				if (file?.extension === "md") {
+					this.currentActiveFile = file;
+				} else {
+					this.currentActiveFile = null;
+				}
+				this.updateContextBadge();
+			}
 		);
 
 		this.updateInputState();
@@ -374,16 +341,13 @@ export class CursorChatView extends ItemView {
 		this.plugin.bridge.off("result", this.onResult);
 		this.plugin.bridge.off("error", this.onError);
 		this.plugin.bridge.off("close", this.onBridgeClose);
-		this.plugin.bridge.off(
-			"mcpApprovalRequired",
-			this.onMcpApprovalRequired
-		);
+
+		if (this.activeLeafChangeRef) {
+			this.app.workspace.offref(this.activeLeafChangeRef);
+			this.activeLeafChangeRef = null;
+		}
 
 		this.hideLoading();
-		if (this.mcpModal) {
-			this.mcpModal.close();
-			this.mcpModal = null;
-		}
 		if (this.markdownComponent) {
 			this.markdownComponent.unload();
 			this.markdownComponent = null;
@@ -448,17 +412,28 @@ export class CursorChatView extends ItemView {
 		await this.appendMessage(msg);
 		void this.plugin.saveSettings();
 
+		// Build prompt with context
+		const noteContent =
+			this.includeActiveNote && this.currentActiveFile
+				? await this.app.vault.cachedRead(this.currentActiveFile)
+				: undefined;
+		const fullPrompt = buildPrompt(text, {
+			activeFile: this.includeActiveNote ? this.currentActiveFile : null,
+			noteContent,
+			customInstructions: this.plugin.settings.customInstructions,
+		});
+
 		// Update bridge model if changed
 		this.plugin.bridge.updateOptions({ model: this.selectedModel });
 		this.plugin.refreshRuntime();
-		await this.plugin.bridge.send(text);
+		console.log(
+			"[cursor-agent] Sending prompt, model:",
+			this.selectedModel
+		);
+		await this.plugin.bridge.send(fullPrompt);
 	}
 
 	private stopGeneration(): void {
-		if (this.mcpModal) {
-			this.mcpModal.close();
-			this.mcpModal = null;
-		}
 		this.plugin.bridge.cancel();
 		this.setStatus("Stopped");
 		new Notice("Generation stopped");
@@ -469,10 +444,9 @@ export class CursorChatView extends ItemView {
 	}
 
 	private updateInputState(): void {
-		const running = this.isRunning || this.plugin.bridge.isRunning();
-		this.inputEl.disabled = running;
+		this.inputEl.disabled = this.isRunning;
 
-		if (running) {
+		if (this.isRunning) {
 			this.sendButtonEl.addClass("is-hidden");
 			this.stopButtonEl.removeClass("is-hidden");
 			this.modelPickerEl.addClass("is-hidden");
@@ -486,21 +460,83 @@ export class CursorChatView extends ItemView {
 	}
 
 	private updateModelLabel(): void {
-		const short = this.selectedModel.split("-").slice(0, 2).join("-");
-		this.modelLabelEl.setText(short || "Select model");
+		this.modelLabelEl.setText(this.selectedModel || "Select model");
+	}
+
+	private updateContextBadge(): void {
+		if (!this.contextAreaEl) return;
+		this.contextAreaEl.empty();
+
+		// Show "add context" button if no context and there's an active file
+		if (!this.includeActiveNote && this.currentActiveFile) {
+			const addBtn = this.contextAreaEl.createEl("button", {
+				cls: "cursor-agent-chat__add-context-btn",
+				attr: { "aria-label": "Add current note as context" },
+			});
+			setIcon(addBtn, "plus");
+			addBtn.createSpan({ text: "Add note" });
+			addBtn.addEventListener("click", () => {
+				this.includeActiveNote = true;
+				this.updateContextBadge();
+			});
+			return;
+		}
+
+		if (!this.includeActiveNote || !this.currentActiveFile) return;
+
+		const badge = this.contextAreaEl.createDiv({
+			cls: "cursor-agent-chat__context-badge",
+		});
+
+		const icon = badge.createSpan({
+			cls: "cursor-agent-chat__context-badge-icon",
+		});
+		setIcon(icon, "file-text");
+
+		badge.createSpan({
+			cls: "cursor-agent-chat__context-badge-name",
+			text: this.currentActiveFile.basename,
+		});
+
+		badge.createSpan({
+			cls: "cursor-agent-chat__context-badge-label",
+			text: "Current",
+		});
+
+		const removeBtn = badge.createEl("button", {
+			cls: "cursor-agent-chat__context-badge-remove",
+			attr: { "aria-label": "Remove from context" },
+		});
+		setIcon(removeBtn, "x");
+		removeBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			this.includeActiveNote = false;
+			this.updateContextBadge();
+		});
+
+		// Click badge to open the file
+		badge.addEventListener("click", () => {
+			if (this.currentActiveFile) {
+				void this.app.workspace.openLinkText(
+					this.currentActiveFile.path,
+					"",
+					false
+				);
+			}
+		});
 	}
 
 	private showModelMenu(evt: MouseEvent): void {
 		const menu = new Menu();
+		const models = this.getDisplayModels();
 
-		for (const model of AVAILABLE_MODELS) {
+		for (const model of models) {
 			menu.addItem((item) => {
 				item.setTitle(model)
 					.setChecked(model === this.selectedModel)
 					.onClick(() => {
 						this.selectedModel = model;
 						this.updateModelLabel();
-						// Save as default
 						this.plugin.settings.defaultModel = model;
 						void this.plugin.saveSettings();
 					});
@@ -510,7 +546,6 @@ export class CursorChatView extends ItemView {
 		menu.addSeparator();
 		menu.addItem((item) => {
 			item.setTitle("Edit in settings…").onClick(() => {
-				// Open settings to allow custom model input
 				const appAny = this.app as unknown as Record<string, unknown>;
 				const setting = appAny.setting as
 					| {
@@ -524,6 +559,16 @@ export class CursorChatView extends ItemView {
 		});
 
 		menu.showAtMouseEvent(evt);
+	}
+
+	private getDisplayModels(): string[] {
+		const models = [...AVAILABLE_MODELS];
+		const selected = this.selectedModel?.trim();
+		const defaultModel = this.plugin.settings.defaultModel?.trim();
+		if (selected && !models.includes(selected)) models.unshift(selected);
+		if (defaultModel && !models.includes(defaultModel))
+			models.unshift(defaultModel);
+		return models;
 	}
 
 	private showHistoryMenu(evt: MouseEvent): void {

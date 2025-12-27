@@ -74,11 +74,13 @@ async function checkCursorLogin(
 	settings: CursorAgentSettings,
 	cwd: string
 ): Promise<boolean> {
+	console.log("[cursor-agent] Checking login status...");
 	const res = await execCursorAgent(["status"], {
 		cwd,
 		settings,
 		timeoutMs: 5000,
 	});
+	console.log("[cursor-agent] Login check result:", res.code, res.stdout.slice(0, 100));
 	if (res.code !== 0) return false;
 
 	const out = `${res.stdout}\n${res.stderr}`.toLowerCase();

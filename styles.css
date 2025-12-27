@@ -313,6 +313,107 @@
 	font-style: italic;
 }
 
+/* Context area */
+.cursor-agent-chat__context-area {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.cursor-agent-chat__context-area:empty {
+	display: none;
+}
+
+.cursor-agent-chat__context-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 4px 3px 8px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	font-size: 0.8em;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+.cursor-agent-chat__context-badge:hover {
+	background: var(--background-modifier-hover);
+}
+
+.cursor-agent-chat__context-badge-icon {
+	display: flex;
+	color: var(--text-muted);
+}
+
+.cursor-agent-chat__context-badge-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.cursor-agent-chat__context-badge-name {
+	max-width: 150px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-normal);
+}
+
+.cursor-agent-chat__context-badge-label {
+	color: var(--text-faint);
+	font-size: 0.9em;
+}
+
+.cursor-agent-chat__context-badge-remove {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: none;
+	border-radius: 4px;
+	background: transparent;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.cursor-agent-chat__context-badge-remove:hover {
+	background: var(--background-modifier-border);
+	color: var(--text-normal);
+}
+
+.cursor-agent-chat__context-badge-remove svg {
+	width: 12px;
+	height: 12px;
+}
+
+.cursor-agent-chat__add-context-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-radius: 6px;
+	background: transparent;
+	border: 1px dashed var(--background-modifier-border);
+	font-size: 0.8em;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.cursor-agent-chat__add-context-btn:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--text-muted);
+	color: var(--text-normal);
+}
+
+.cursor-agent-chat__add-context-btn svg {
+	width: 12px;
+	height: 12px;
+}
+
 /* Input area */
 .cursor-agent-chat__input-wrap {
 	display: flex;

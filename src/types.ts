@@ -116,21 +116,6 @@ export type CursorEvent =
 	| ToolCallEvent
 	| ResultEvent;
 
-export interface McpServerInfo {
-	name: string;
-	url?: string;
-}
-
-export interface McpServerApprovalRequest {
-	servers: McpServerInfo[];
-	rawText: string;
-}
-
-export type McpServerApprovalChoice =
-	| "approveAll"
-	| "continueWithoutApproval"
-	| "quit";
-
 // Plugin Settings
 export interface CursorAgentSettings {
 	apiKey: string;

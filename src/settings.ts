@@ -73,7 +73,7 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 					} else {
 						new Notice("Status check failed (see console)");
 					}
-					console.debug("[cursor-agent status]", res);
+					console.log("[cursor-agent status]", res);
 				});
 			})
 			.addButton((btn) => {
@@ -82,7 +82,7 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 					const res = await openLoginFlow(this.plugin.settings, cwd);
 					if (res.code === 0) new Notice("Login flow complete");
 					else new Notice("Login flow exited (see console)");
-					console.debug("[cursor-agent login]", res);
+					console.log("[cursor-agent login]", res);
 				});
 			});
 

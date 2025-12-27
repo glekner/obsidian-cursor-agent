@@ -140,6 +140,7 @@ export async function execCursorAgent(
 	args: string[],
 	options: { cwd: string; settings: CursorAgentSettings; timeoutMs?: number }
 ): Promise<CursorAgentExecResult> {
+	console.log("[cursor-agent] execCursorAgent:", args);
 	const proc = await spawnCursorAgentPiped(args, {
 		cwd: options.cwd,
 		settings: options.settings,
@@ -167,6 +168,7 @@ export async function execCursorAgent(
 		};
 
 		const timer = setTimeout(() => {
+			console.log("[cursor-agent] exec timed out, stdout:", stdout.slice(0, 200));
 			try {
 				proc.kill();
 			} catch {
@@ -181,6 +183,7 @@ export async function execCursorAgent(
 		}, timeoutMs);
 
 		proc.on("close", (code, signal) => {
+			console.log("[cursor-agent] exec closed, code:", code);
 			settle({ code, signal, stdout, stderr });
 		});
 	});

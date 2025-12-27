@@ -80,6 +80,7 @@ mcp_Context7_get-library-docs(context7CompatibleLibraryID="/obsidianmd/obsidian-
     -   [x] Message list rendering
     -   [x] Streaming text updates (message-level)
     -   [x] Auto-scroll behavior
+    -   [x] Active note context badge (like Copilot)
 
 -   [x] **Chat Header** (in `src/ui/chat-view.ts`)
 
@@ -164,6 +165,10 @@ mcp_Context7_get-library-docs(context7CompatibleLibraryID="/obsidianmd/obsidian-
 -   [ ] Works without git
 
 ---
+
+## Coding Conventions
+
+- All `console.log` statements must start with `[cursor-agent]` prefix for easy filtering
 
 ## Known Issues / Notes
 

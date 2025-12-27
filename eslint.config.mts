@@ -24,6 +24,7 @@ export default tseslint.config(
 		files: ["src/**/*.ts"],
 		rules: {
 			"obsidianmd/no-node-builtins": "off",
+			"no-console": "off",
 		},
 	},
 	globalIgnores([
