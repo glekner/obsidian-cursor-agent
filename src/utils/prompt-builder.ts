@@ -20,6 +20,14 @@ export interface PromptContext {
 	activeFile?: TFile | null;
 	noteContent?: string;
 	customInstructions?: string;
+	contextPaths?: PromptContextPath[];
+}
+
+export type PromptContextPathType = "note" | "folder";
+
+export interface PromptContextPath {
+	type: PromptContextPathType;
+	path: string;
 }
 
 export function buildPrompt(
@@ -40,6 +48,14 @@ export function buildPrompt(
 		parts.push(
 			`\n\n<active_note>\n<path>${context.activeFile.path}</path>\n<content>\n${context.noteContent}\n</content>\n</active_note>`
 		);
+	}
+
+	// Selected context paths (notes/folders) - pass paths only so the agent can decide what to read.
+	if (context.contextPaths?.length) {
+		const items = context.contextPaths
+			.map((c) => `<item type="${c.type}">${c.path}</item>`)
+			.join("\n");
+		parts.push(`\n\n<context_paths>\n${items}\n</context_paths>`);
 	}
 
 	// User message
