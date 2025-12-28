@@ -39,6 +39,18 @@ interface TypeaheadState {
 	selectedCategory?: "notes" | "folders" | "activeNote";
 }
 
+function scoreMatch(
+	queryLower: string,
+	titleLower: string,
+	subtitleLower: string
+): number {
+	if (!queryLower) return 0;
+	if (titleLower.startsWith(queryLower)) return 0;
+	if (titleLower.includes(queryLower)) return 1;
+	if (subtitleLower.includes(queryLower)) return 2;
+	return 999;
+}
+
 const CATEGORIES: TypeaheadOption[] = [
 	{ id: "cat-active", title: "Active note", category: "activeNote" },
 	{ id: "cat-notes", title: "Notes", subtitle: "Search vault notes", category: "notes" },
@@ -70,22 +82,92 @@ export function AtMentionPlugin({
 	}, []);
 
 	const searchResults = useMemo((): TypeaheadOption[] => {
-		if (state.mode === "category") {
-			if (!state.query) return CATEGORIES;
-			const q = state.query.toLowerCase();
-			return CATEGORIES.filter(
-				(c) =>
-					c.title.toLowerCase().includes(q) ||
-					c.subtitle?.toLowerCase().includes(q)
-			);
-		}
+		const q = state.query.trim().toLowerCase();
 
-		const q = state.query.toLowerCase();
+		if (state.mode === "category") {
+			if (!q) return CATEGORIES;
+
+			const out: TypeaheadOption[] = [];
+
+			if (activeFile) {
+				const titleLower = activeFile.basename.toLowerCase();
+				const subtitleLower = activeFile.path.toLowerCase();
+				if (titleLower.includes(q) || subtitleLower.includes(q)) {
+					out.push({
+						id: "active-note",
+						title: activeFile.basename,
+						subtitle: activeFile.path,
+						category: "activeNote",
+						data: activeFile,
+					});
+				}
+			}
+
+			const noteMatches = app.vault
+				.getMarkdownFiles()
+				.filter((f) => {
+					const titleLower = f.basename.toLowerCase();
+					const subtitleLower = f.path.toLowerCase();
+					return titleLower.includes(q) || subtitleLower.includes(q);
+				})
+				.sort((a, b) => {
+					const sa = scoreMatch(q, a.basename.toLowerCase(), a.path.toLowerCase());
+					const sb = scoreMatch(q, b.basename.toLowerCase(), b.path.toLowerCase());
+					if (sa !== sb) return sa - sb;
+					return b.stat.mtime - a.stat.mtime;
+				})
+				.slice(0, 15)
+				.map((f) => ({
+					id: `note-${f.path}`,
+					title: f.basename,
+					subtitle: f.path,
+					category: "notes" as const,
+					data: f,
+				}));
+
+			const folderMatches = app.vault
+				.getAllLoadedFiles()
+				.filter((f): f is TFolder => f instanceof TFolder)
+				.filter((f) => {
+					const titleLower = f.name.toLowerCase();
+					const subtitleLower = f.path.toLowerCase();
+					return titleLower.includes(q) || subtitleLower.includes(q);
+				})
+				.sort((a, b) => {
+					const sa = scoreMatch(q, a.name.toLowerCase(), a.path.toLowerCase());
+					const sb = scoreMatch(q, b.name.toLowerCase(), b.path.toLowerCase());
+					if (sa !== sb) return sa - sb;
+					return a.path.localeCompare(b.path);
+				})
+				.slice(0, 15)
+				.map((f) => ({
+					id: `folder-${f.path}`,
+					title: f.name,
+					subtitle: f.path,
+					category: "folders" as const,
+					data: f,
+				}));
+
+			out.push(...noteMatches, ...folderMatches);
+			return out.slice(0, 30);
+		}
 
 		if (state.selectedCategory === "notes") {
 			const files = app.vault.getMarkdownFiles();
 			return files
-				.filter((f) => f.basename.toLowerCase().includes(q))
+				.filter((f) => {
+					if (!q) return true;
+					const titleLower = f.basename.toLowerCase();
+					const subtitleLower = f.path.toLowerCase();
+					return titleLower.includes(q) || subtitleLower.includes(q);
+				})
+				.sort((a, b) => {
+					if (!q) return b.stat.mtime - a.stat.mtime;
+					const sa = scoreMatch(q, a.basename.toLowerCase(), a.path.toLowerCase());
+					const sb = scoreMatch(q, b.basename.toLowerCase(), b.path.toLowerCase());
+					if (sa !== sb) return sa - sb;
+					return b.stat.mtime - a.stat.mtime;
+				})
 				.slice(0, 15)
 				.map((f) => ({
 					id: `note-${f.path}`,
@@ -101,7 +183,19 @@ export function AtMentionPlugin({
 				.getAllLoadedFiles()
 				.filter((f): f is TFolder => f instanceof TFolder);
 			return folders
-				.filter((f) => f.name.toLowerCase().includes(q))
+				.filter((f) => {
+					if (!q) return true;
+					const titleLower = f.name.toLowerCase();
+					const subtitleLower = f.path.toLowerCase();
+					return titleLower.includes(q) || subtitleLower.includes(q);
+				})
+				.sort((a, b) => {
+					if (!q) return a.path.localeCompare(b.path);
+					const sa = scoreMatch(q, a.name.toLowerCase(), a.path.toLowerCase());
+					const sb = scoreMatch(q, b.name.toLowerCase(), b.path.toLowerCase());
+					if (sa !== sb) return sa - sb;
+					return a.path.localeCompare(b.path);
+				})
 				.slice(0, 15)
 				.map((f) => ({
 					id: `folder-${f.path}`,
@@ -113,7 +207,7 @@ export function AtMentionPlugin({
 		}
 
 		return [];
-	}, [state.mode, state.query, state.selectedCategory, app.vault]);
+	}, [activeFile, state.mode, state.query, state.selectedCategory, app.vault]);
 
 	const handleSelect = useCallback(
 		(option: TypeaheadOption) => {

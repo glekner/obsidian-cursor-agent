@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Notice, TFile } from "obsidian";
 import type { LexicalEditor } from "lexical";
-import { Button } from "@/components/ui/button";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
 import ChatMessages from "@/components/chat-components/ChatMessages";
-import LexicalChatInput, {
-	removePillByPath,
-} from "@/components/lexical/LexicalChatInput";
+import { removePillByPath } from "@/components/lexical/LexicalChatInput";
 import type CursorAgentChatPlugin from "@/main";
 import type {
 	AssistantMessageEvent,
@@ -22,8 +14,7 @@ import type {
 } from "@/types";
 import { buildPrompt, type PromptContextPath } from "@/utils/prompt-builder";
 import { AVAILABLE_MODELS } from "@/cursor/models";
-import { CursorModelSelector } from "@/components/ui/CursorModelSelector";
-import { Download, History, MessageCirclePlus } from "lucide-react";
+import { ChatInputContainer } from "@/components/chat-components/ChatInputContainer";
 import { LoadChatHistoryModal } from "@/modals/LoadChatHistoryModal";
 import {
 	getChatNoteMeta,
@@ -90,9 +81,12 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	const [selectedModel, setSelectedModel] = useState<string>(
 		plugin.settings.defaultModel || "auto"
 	);
-	const [includeActiveNote, setIncludeActiveNote] = useState(false);
-	const [contextNotePaths, setContextNotePaths] = useState<string[]>([]);
-	const [contextFolderPaths, setContextFolderPaths] = useState<string[]>([]);
+	const [includeActiveNoteFromUi, setIncludeActiveNoteFromUi] = useState(true);
+	const [notePathsFromUi, setNotePathsFromUi] = useState<string[]>([]);
+	const [folderPathsFromUi, setFolderPathsFromUi] = useState<string[]>([]);
+	const [notePathsFromPills, setNotePathsFromPills] = useState<string[]>([]);
+	const [folderPathsFromPills, setFolderPathsFromPills] = useState<string[]>([]);
+	const [activeNoteFromPills, setActiveNoteFromPills] = useState(false);
 	const [activeFile, setActiveFile] = useState<TFile | null>(() => {
 		const f = plugin.app.workspace.getActiveFile();
 		return isMarkdownFile(f) ? f : null;
@@ -112,6 +106,16 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		if (def && !models.includes(def)) models.unshift(def);
 		return models;
 	}, [plugin.settings.defaultModel, selectedModel]);
+
+	const includeActiveNote = includeActiveNoteFromUi || activeNoteFromPills;
+	const contextNotePaths = useMemo(
+		() => Array.from(new Set([...notePathsFromUi, ...notePathsFromPills])),
+		[notePathsFromUi, notePathsFromPills]
+	);
+	const contextFolderPaths = useMemo(
+		() => Array.from(new Set([...folderPathsFromUi, ...folderPathsFromPills])),
+		[folderPathsFromUi, folderPathsFromPills]
+	);
 
 	const reloadHistory = () => {
 		setMessages(plugin.sessionManager.getMessages());
@@ -182,9 +186,11 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 				pendingMessagesRef.current = [];
 				lastFinalizedRef.current = "";
 				streamingTextRef.current = "";
-				setContextNotePaths([]);
-				setContextFolderPaths([]);
-				setIncludeActiveNote(false);
+				setNotePathsFromUi([]);
+				setFolderPathsFromUi([]);
+				setNotePathsFromPills([]);
+				setFolderPathsFromPills([]);
+				setActiveNoteFromPills(false);
 				setStreamingText("");
 				setIsGenerating(false);
 
@@ -224,9 +230,11 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		pendingMessagesRef.current = [];
 		lastFinalizedRef.current = "";
 		streamingTextRef.current = "";
-		setContextNotePaths([]);
-		setContextFolderPaths([]);
-		setIncludeActiveNote(false);
+		setNotePathsFromUi([]);
+		setFolderPathsFromUi([]);
+		setNotePathsFromPills([]);
+		setFolderPathsFromPills([]);
+		setActiveNoteFromPills(false);
 		setMessages([]);
 		setStreamingText("");
 		void plugin.saveSettings();
@@ -241,29 +249,60 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	// Pill sync handlers
 	const handleNotesChange = useCallback(
 		(notes: { path: string; title: string }[]) => {
-			setContextNotePaths(notes.map((n) => n.path));
+			setNotePathsFromPills(notes.map((n) => n.path));
 		},
 		[]
 	);
 
 	const handleNotesRemoved = useCallback((paths: string[]) => {
-		setContextNotePaths((prev) => prev.filter((p) => !paths.includes(p)));
+		setNotePathsFromPills((prev) => prev.filter((p) => !paths.includes(p)));
 	}, []);
 
 	const handleFoldersChange = useCallback((paths: string[]) => {
-		setContextFolderPaths(paths);
+		setFolderPathsFromPills(paths);
 	}, []);
 
 	const handleFoldersRemoved = useCallback((paths: string[]) => {
-		setContextFolderPaths((prev) => prev.filter((p) => !paths.includes(p)));
+		setFolderPathsFromPills((prev) => prev.filter((p) => !paths.includes(p)));
 	}, []);
 
 	const handleActiveNoteAdded = useCallback(() => {
-		setIncludeActiveNote(true);
+		setActiveNoteFromPills(true);
 	}, []);
 
 	const handleActiveNoteRemoved = useCallback(() => {
-		setIncludeActiveNote(false);
+		setActiveNoteFromPills(false);
+	}, []);
+
+	const handleIncludeActiveNoteChange = useCallback(
+		(value: boolean) => {
+			setIncludeActiveNoteFromUi(value);
+			if (!value && editorRef.current) {
+				removePillByPath(editorRef.current, "", "active");
+				setActiveNoteFromPills(false);
+			}
+		},
+		[]
+	);
+
+	const handleAddNotePath = useCallback((path: string) => {
+		setNotePathsFromUi((prev) => (prev.includes(path) ? prev : [...prev, path]));
+	}, []);
+
+	const handleAddFolderPath = useCallback((path: string) => {
+		setFolderPathsFromUi((prev) => (prev.includes(path) ? prev : [...prev, path]));
+	}, []);
+
+	const handleRemoveNotePath = useCallback((path: string) => {
+		setNotePathsFromUi((prev) => prev.filter((p) => p !== path));
+		setNotePathsFromPills((prev) => prev.filter((p) => p !== path));
+		if (editorRef.current) removePillByPath(editorRef.current, path, "note");
+	}, []);
+
+	const handleRemoveFolderPath = useCallback((path: string) => {
+		setFolderPathsFromUi((prev) => prev.filter((p) => p !== path));
+		setFolderPathsFromPills((prev) => prev.filter((p) => p !== path));
+		if (editorRef.current) removePillByPath(editorRef.current, path, "folder");
 	}, []);
 
 	const finalizeStreamingMessage = () => {
@@ -417,9 +456,11 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		});
 
 		// Reset context after building prompt
-		setContextNotePaths([]);
-		setContextFolderPaths([]);
-		setIncludeActiveNote(false);
+		setNotePathsFromUi([]);
+		setFolderPathsFromUi([]);
+		setNotePathsFromPills([]);
+		setFolderPathsFromPills([]);
+		setActiveNoteFromPills(false);
 
 		plugin.settings.defaultModel = selectedModel;
 		plugin.bridge.updateOptions({ model: selectedModel });
@@ -479,12 +520,8 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	}, [plugin.app.workspace]);
 
 	return (
-		<div className="tw-flex tw-size-full tw-flex-col tw-overflow-hidden tw-p-2">
-			<div className="tw-mb-2 tw-flex tw-items-center tw-justify-between">
-				<div className="tw-text-sm tw-font-medium">Cursor agent</div>
-			</div>
-
-			<div className="tw-flex-1 tw-overflow-hidden tw-rounded-md tw-border tw-border-border">
+		<div className="tw-flex tw-h-full tw-w-full tw-flex-col tw-overflow-hidden tw-p-2">
+			<div className="tw-h-full tw-min-h-0 tw-flex-1 tw-overflow-hidden">
 				<ChatMessages
 					chatHistory={messages}
 					currentAiMessage={streamingText}
@@ -492,99 +529,39 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 				/>
 			</div>
 
-			<div className="tw-mt-2 tw-flex tw-flex-col tw-gap-2 tw-rounded-md tw-border tw-border-border tw-p-2">
-				<div className="tw-flex tw-items-center tw-justify-between tw-gap-2">
-					<CursorModelSelector
-						disabled={isGenerating}
-						models={displayModels}
-						value={selectedModel}
-						onChange={setSelectedModel}
-					/>
-					<div className="tw-flex tw-items-center tw-gap-1">
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="ghost2"
-									size="icon"
-									title="New chat"
-									onClick={() => requestNewConversation()}
-								>
-									<MessageCirclePlus className="tw-size-4" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>New chat</TooltipContent>
-						</Tooltip>
-
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="ghost2"
-									size="icon"
-									title="Save chat as note"
-									disabled={isGenerating}
-									onClick={() => void saveCurrentChatNote()}
-								>
-									<Download className="tw-size-4" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>Save chat as note</TooltipContent>
-						</Tooltip>
-
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									variant="ghost2"
-									size="icon"
-									title="Chat history"
-									disabled={isGenerating}
-									onClick={() => void openChatHistory()}
-								>
-									<History className="tw-size-4" />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent>Chat history</TooltipContent>
-						</Tooltip>
-					</div>
-				</div>
-
-				<LexicalChatInput
-					app={plugin.app}
-					value={input}
-					onChange={setInput}
-					onSubmit={() => void sendPrompt(input)}
-					disabled={isGenerating}
-					activeFile={activeFile}
-					onNotesChange={handleNotesChange}
-					onNotesRemoved={handleNotesRemoved}
-					onFoldersChange={handleFoldersChange}
-					onFoldersRemoved={handleFoldersRemoved}
-					onActiveNoteAdded={handleActiveNoteAdded}
-					onActiveNoteRemoved={handleActiveNoteRemoved}
-					onEditorReady={(editor) => {
-						editorRef.current = editor;
-					}}
-				/>
-
-				<div className="tw-flex tw-justify-end tw-gap-2">
-					{isGenerating ? (
-						<Button
-							variant="ghost2"
-							size="fit"
-							onClick={() => stop()}
-						>
-							Stop
-						</Button>
-					) : (
-						<Button
-							variant="ghost2"
-							size="fit"
-							onClick={() => void sendPrompt(input)}
-						>
-							Send
-						</Button>
-					)}
-				</div>
-			</div>
+			<ChatInputContainer
+				app={plugin.app}
+				activeFile={activeFile}
+				isGenerating={isGenerating}
+				currentActiveFile={activeFile}
+				includeActiveNote={includeActiveNote}
+				onIncludeActiveNoteChange={handleIncludeActiveNoteChange}
+				notePaths={contextNotePaths}
+				folderPaths={contextFolderPaths}
+				onAddNotePath={handleAddNotePath}
+				onAddFolderPath={handleAddFolderPath}
+				onRemoveNotePath={handleRemoveNotePath}
+				onRemoveFolderPath={handleRemoveFolderPath}
+				models={displayModels}
+				model={selectedModel}
+				onModelChange={setSelectedModel}
+				input={input}
+				onInputChange={setInput}
+				onSend={() => void sendPrompt(input)}
+				onStop={stop}
+				onNewChat={requestNewConversation}
+				onSaveChat={() => void saveCurrentChatNote()}
+				onOpenHistory={() => void openChatHistory()}
+				onNotesChange={handleNotesChange}
+				onNotesRemoved={handleNotesRemoved}
+				onFoldersChange={handleFoldersChange}
+				onFoldersRemoved={handleFoldersRemoved}
+				onActiveNoteAdded={handleActiveNoteAdded}
+				onActiveNoteRemoved={handleActiveNoteRemoved}
+				onEditorReady={(editor) => {
+					editorRef.current = editor;
+				}}
+			/>
 		</div>
 	);
 }

@@ -56,6 +56,7 @@ export function TypeaheadMenuPortal({
 	onSelect,
 	onHighlight,
 	range,
+	query,
 	mode = "search",
 }: TypeaheadMenuPortalProps) {
 	const [position, setPosition] = useState<{
@@ -110,7 +111,7 @@ export function TypeaheadMenuPortal({
 				width: MENU_WIDTH,
 			}}
 		>
-			{mode === "category" && (
+			{mode === "category" && !query && (
 				<div className="tw-border-b tw-border-border tw-px-3 tw-py-1.5 tw-text-xs tw-text-muted">
 					Select type
 				</div>

@@ -875,8 +875,12 @@ If your plugin does not need CSS, delete this file.
 }
 
 /* use 'important' to prevent ob default css style from being third-party theme overridden */
-.workspace-leaf-content[data-type="copilot-chat-view"] .view-content {
+.workspace-leaf-content[data-type="copilot-chat-view"] .view-content,
+.workspace-leaf-content[data-type="cursor-agent-chat"] .view-content {
   padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-8)) !important;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Collapsible sources styling */

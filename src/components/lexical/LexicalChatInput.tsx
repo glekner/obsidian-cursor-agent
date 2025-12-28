@@ -145,12 +145,12 @@ export default function LexicalChatInput({
 				<PlainTextPlugin
 					contentEditable={
 						<ContentEditable
-							className="tw-max-h-40 tw-min-h-[60px] tw-w-full tw-resize-none tw-overflow-y-auto tw-rounded-md tw-border tw-border-border tw-bg-primary tw-px-2 tw-py-2 tw-text-sm tw-outline-none focus-visible:tw-ring-1 focus-visible:tw-ring-accent"
+							className="tw-max-h-40 tw-min-h-[60px] tw-w-full tw-resize-none tw-overflow-y-auto tw-rounded-md tw-border-none tw-bg-transparent tw-px-2 tw-text-sm tw-text-normal tw-outline-none focus-visible:tw-ring-0"
 							aria-label="Chat input"
 						/>
 					}
 					placeholder={
-						<div className="tw-pointer-events-none tw-absolute tw-left-2 tw-top-2 tw-select-none tw-text-sm tw-text-muted/60">
+						<div className="tw-pointer-events-none tw-absolute tw-left-2 tw-top-0 tw-select-none tw-text-sm tw-text-muted/60">
 							{placeholder}
 						</div>
 					}

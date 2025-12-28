@@ -117,8 +117,9 @@ export function ChatContextBar({
 						className="tw-items-center tw-gap-1 tw-py-0 tw-pl-2 tw-pr-0.5 tw-text-xs"
 					>
 						<span className="tw-max-w-40 tw-truncate">
-							Active Note
+							{currentActiveFile.basename}
 						</span>
+						<span className="tw-text-xs tw-text-faint">Current</span>
 						<Button
 							variant="ghost2"
 							size="fit"

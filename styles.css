@@ -131,8 +131,8 @@
   left: var(--size-4-2);
 }
 
-.tw-top-2 {
-  top: var(--size-4-2);
+.tw-top-0 {
+  top: 0px;
 }
 
 .tw-z-\[1\] {
@@ -176,10 +176,6 @@
   margin-bottom: var(--size-4-2);
 }
 
-.tw-mb-2 {
-  margin-bottom: var(--size-4-2);
-}
-
 .tw-ml-1 {
   margin-left: var(--size-4-1);
 }
@@ -190,6 +186,10 @@
 
 .tw-mt-0\.5 {
   margin-top: 0.125rem;
+}
+
+.tw-mt-1 {
+  margin-top: var(--size-4-1);
 }
 
 .tw-mt-2 {
@@ -268,6 +268,10 @@
 
 .tw-max-h-\[300px\] {
   max-height: 300px;
+}
+
+.tw-min-h-0 {
+  min-height: 0px;
 }
 
 .tw-min-h-\[60px\] {
@@ -349,6 +353,12 @@
   -webkit-user-select: none;
      -moz-user-select: none;
           user-select: none;
+}
+
+.tw-select-text {
+  -webkit-user-select: text;
+     -moz-user-select: text;
+          user-select: text;
 }
 
 .tw-resize-none {
@@ -483,6 +493,10 @@
 
 .\!tw-border-none {
   border-style: none !important;
+}
+
+.tw-border-none {
+  border-style: none;
 }
 
 .tw-border-border {
@@ -625,6 +639,10 @@
   padding-bottom: var(--size-4-2);
 }
 
+.tw-pb-1 {
+  padding-bottom: var(--size-4-1);
+}
+
 .tw-pl-2 {
   padding-left: var(--size-4-2);
 }
@@ -645,12 +663,20 @@
   padding-right: var(--size-4-2);
 }
 
+.tw-pt-2 {
+  padding-top: var(--size-4-2);
+}
+
 .tw-align-middle {
   vertical-align: middle;
 }
 
 .tw-font-mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.tw-text-\[calc\(var\(--font-text-size\)_-_2px\)\] {
+  font-size: calc(var(--font-text-size) - 2px);
 }
 
 .tw-text-base {
@@ -811,10 +837,6 @@
 
 .tw-bg-accent\/20 {
   background-color: color-mix(in srgb, var(--text-accent) 20%, transparent);
-}
-
-.tw-bg-secondary\/30 {
-  background-color: color-mix(in srgb, var(--background-secondary) 30%, transparent);
 }
 
 .tw-bg-secondary\/50 {
@@ -1719,8 +1741,12 @@ If your plugin does not need CSS, delete this file.
 
 /* use 'important' to prevent ob default css style from being third-party theme overridden */
 
-.workspace-leaf-content[data-type="copilot-chat-view"] .view-content {
+.workspace-leaf-content[data-type="copilot-chat-view"] .view-content,
+.workspace-leaf-content[data-type="cursor-agent-chat"] .view-content {
   padding-bottom: max(var(--safe-area-inset-bottom), var(--size-4-8)) !important;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Collapsible sources styling */

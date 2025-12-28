@@ -101,20 +101,28 @@ export const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
 		<div className="tw-my-1 tw-flex tw-w-full tw-flex-col">
 			<div
 				className={cn(
-					"tw-group tw-mx-2 tw-rounded-md tw-p-2",
+					"tw-group tw-rounded-md tw-p-2",
 					isUser &&
-						"tw-border tw-border-solid tw-border-border tw-bg-secondary/30"
+						"tw-mx-2 tw-border tw-border-solid tw-border-border"
 				)}
+				style={
+					isUser
+						? {
+								backgroundColor:
+									"var(--background-modifier-hover)",
+						  }
+						: undefined
+				}
 			>
-				<div className="tw-flex tw-max-w-full tw-flex-col tw-gap-1 tw-overflow-hidden">
+				<div className="tw-flex tw-max-w-full tw-flex-col tw-gap-2 tw-overflow-hidden message-content">
 					{isUser ? (
-						<div className="tw-whitespace-pre-wrap tw-break-words tw-text-sm">
+						<div className="tw-whitespace-pre-wrap tw-break-words tw-text-[calc(var(--font-text-size)_-_2px)] tw-font-normal">
 							{message.content}
 						</div>
 					) : (
 						<div
 							ref={contentRef}
-							className="tw-prose tw-prose-sm tw-max-w-none tw-text-sm"
+							className="tw-max-w-none tw-text-[calc(var(--font-text-size)_-_2px)]"
 						/>
 					)}
 
