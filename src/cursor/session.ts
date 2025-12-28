@@ -195,4 +195,25 @@ export class SessionManager {
 		this.messageHistory.clear();
 		this.currentSession = null;
 	}
+
+	/**
+	 * Upsert a session and replace its message history (used for loading chats from notes).
+	 */
+	upsertSession(sessionId: string, model: string, messages: ChatMessage[]): void {
+		const timestamp =
+			messages.length > 0
+				? messages[messages.length - 1]?.timestamp ?? Date.now()
+				: Date.now();
+		const preview =
+			messages.find((m) => m.role === "user")?.content?.slice(0, 100) ?? "";
+
+		this.messageHistory.set(sessionId, [...messages]);
+		this.conversations.set(sessionId, {
+			sessionId,
+			timestamp,
+			preview,
+			messageCount: messages.length,
+		});
+		this.currentSession = { id: sessionId, model, startTime: timestamp };
+	}
 }

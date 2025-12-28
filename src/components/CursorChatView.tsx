@@ -11,7 +11,6 @@ export const VIEW_TYPE_CURSOR_CHAT = "cursor-agent-chat";
 
 export class CursorChatView extends ItemView {
 	private root: Root | null = null;
-	// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 	private chatApi: CursorChatApi | null = null;
 	private readonly eventTarget = new EventTarget();
 

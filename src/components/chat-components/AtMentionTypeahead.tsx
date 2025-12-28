@@ -128,7 +128,6 @@ export function AtMentionTypeahead({
 		[folders]
 	);
 
-	// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 	const activeNoteItem = useMemo<TypeaheadItemOption<TFile> | null>(() => {
 		if (!currentActiveFile) return null;
 		return {

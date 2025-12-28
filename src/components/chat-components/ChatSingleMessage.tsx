@@ -122,7 +122,7 @@ export const ChatSingleMessage: React.FC<ChatSingleMessageProps> = ({
 						<div className="tw-flex tw-items-center tw-justify-end">
 							<ChatButtons
 								message={message}
-								onCopy={copyToClipboard}
+								onCopy={() => void copyToClipboard()}
 								isCopied={isCopied}
 								onInsertIntoEditor={insertIntoEditor}
 								onDelete={onDelete}

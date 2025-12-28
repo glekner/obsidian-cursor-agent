@@ -9,6 +9,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, React.ComponentProps<"tex
     const adjustHeight = React.useCallback(() => {
       const textarea = textareaRef.current;
       if (textarea) {
+        // eslint-disable-next-line obsidianmd/no-static-styles-assignment -- dynamic height
         textarea.style.height = "auto";
         const newHeight = Math.min(textarea.scrollHeight, 300);
         textarea.style.height = `${newHeight}px`;

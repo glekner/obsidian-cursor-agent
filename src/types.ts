@@ -128,6 +128,14 @@ export interface CursorAgentSettings {
 	customInstructions: string;
 	workingDirectory: string;
 	defaultModel: string;
+	/**
+	 * Vault-relative folder path where chat history notes are stored.
+	 */
+	chatHistoryFolder: string;
+	/**
+	 * When enabled, save the current chat as a note after each completed response.
+	 */
+	autosaveChat: boolean;
 }
 
 export const DEFAULT_SETTINGS: CursorAgentSettings = {
@@ -138,6 +146,8 @@ export const DEFAULT_SETTINGS: CursorAgentSettings = {
 	customInstructions: "",
 	workingDirectory: "",
 	defaultModel: "",
+	chatHistoryFolder: "Cursor Agent Chats",
+	autosaveChat: false,
 };
 
 // Chat Message for UI

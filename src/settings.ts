@@ -154,5 +154,29 @@ export class CursorAgentSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
+
+		new Setting(containerEl)
+			.setName("Chat history folder")
+			.setDesc("Vault-relative folder where chats are saved as notes.")
+			.addText((text) => {
+				text.setPlaceholder(DEFAULT_SETTINGS.chatHistoryFolder)
+					.setValue(this.plugin.settings.chatHistoryFolder)
+					.onChange(async (value) => {
+						this.plugin.settings.chatHistoryFolder = value.trim();
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName("Autosave chat as note")
+			.setDesc("Save chat to a note after each completed response.")
+			.addToggle((toggle) => {
+				toggle
+					.setValue(this.plugin.settings.autosaveChat)
+					.onChange(async (value) => {
+						this.plugin.settings.autosaveChat = value;
+						await this.plugin.saveSettings();
+					});
+			});
 	}
 }

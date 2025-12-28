@@ -201,6 +201,11 @@ export default class CursorAgentChatPlugin extends Plugin {
 		});
 	}
 
+	setActiveSessionId(sessionId: string | null): void {
+		this.lastSessionId = sessionId;
+		this.bridge.setSessionId(sessionId);
+	}
+
 	private loadFromPersistedData(raw: unknown): void {
 		if (!raw || typeof raw !== "object") {
 			this.settings = { ...DEFAULT_SETTINGS };

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Notice, TFile } from "obsidian";
+import type { LexicalEditor } from "lexical";
 import { Button } from "@/components/ui/button";
-import ChatMessages from "@/components/chat-components/ChatMessages";
-import { ChatContextBar } from "@/components/chat-components/ChatContextBar";
 import {
-	AtMentionPortal,
-	useAtMentionState,
-	type AtMentionCategory,
-} from "@/components/chat-components/AtMentionPortal";
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
+import ChatMessages from "@/components/chat-components/ChatMessages";
+import LexicalChatInput, {
+	removePillByPath,
+} from "@/components/lexical/LexicalChatInput";
 import type CursorAgentChatPlugin from "@/main";
 import type {
 	AssistantMessageEvent,
@@ -18,9 +21,16 @@ import type {
 	ResultEvent,
 } from "@/types";
 import { buildPrompt, type PromptContextPath } from "@/utils/prompt-builder";
-import { getTextareaCaretCoords } from "@/utils/textarea-caret";
 import { AVAILABLE_MODELS } from "@/cursor/models";
 import { CursorModelSelector } from "@/components/ui/CursorModelSelector";
+import { Download, History, MessageCirclePlus } from "lucide-react";
+import { LoadChatHistoryModal } from "@/modals/LoadChatHistoryModal";
+import {
+	getChatNoteMeta,
+	listChatHistoryFiles,
+	parseChatNoteContent,
+	saveChatAsNote,
+} from "@/history/chat-notes";
 
 export type { CursorChatApi };
 
@@ -43,11 +53,9 @@ function mergeStreamingText(prev: string, incoming: string): string {
 	if (!prev) return next;
 	if (next === prev) return prev;
 
-	// Some stream formats send the full message-so-far each time.
 	if (next.startsWith(prev)) return next;
 	if (prev.startsWith(next)) return prev;
 
-	// Try to merge overlapping suffix/prefix to avoid duplicated spans.
 	const maxOverlap = Math.min(prev.length, next.length);
 	for (let i = maxOverlap; i > 0; i--) {
 		if (prev.endsWith(next.slice(0, i))) return prev + next.slice(i);
@@ -82,26 +90,19 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	const [selectedModel, setSelectedModel] = useState<string>(
 		plugin.settings.defaultModel || "auto"
 	);
-	const [includeActiveNote, setIncludeActiveNote] = useState(true);
+	const [includeActiveNote, setIncludeActiveNote] = useState(false);
 	const [contextNotePaths, setContextNotePaths] = useState<string[]>([]);
 	const [contextFolderPaths, setContextFolderPaths] = useState<string[]>([]);
-	const [mentionAnchor, setMentionAnchor] = useState<{
-		left: number;
-		top: number;
-	} | null>(null);
-	const [triggerIndex, setTriggerIndex] = useState<number | null>(null);
 	const [activeFile, setActiveFile] = useState<TFile | null>(() => {
 		const f = plugin.app.workspace.getActiveFile();
 		return isMarkdownFile(f) ? f : null;
 	});
 
-	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const editorRef = useRef<LexicalEditor | null>(null);
 	const pendingMessagesRef = useRef<ChatMessage[]>([]);
 	const lastFinalizedRef = useRef<string>("");
 	const streamingTextRef = useRef<string>("");
 	const selectedModelRef = useRef<string>(selectedModel);
-
-	const mentionState = useAtMentionState(activeFile);
 
 	const displayModels = useMemo(() => {
 		const models = [...AVAILABLE_MODELS];
@@ -116,18 +117,116 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		setMessages(plugin.sessionManager.getMessages());
 	};
 
+	const saveCurrentChatNote = async (opts?: { silent?: boolean }) => {
+		const session = plugin.sessionManager.getCurrentSession();
+		const sessionId = session?.id ?? plugin.bridge.getSessionId();
+		if (!sessionId) {
+			if (!opts?.silent) new Notice("No session to save yet");
+			return;
+		}
+
+		const msgs = plugin.sessionManager.getMessages(sessionId);
+		if (msgs.length === 0) {
+			if (!opts?.silent) new Notice("No messages to save");
+			return;
+		}
+
+		const { file } = await saveChatAsNote({
+			app: plugin.app,
+			folderSetting: plugin.settings.chatHistoryFolder,
+			sessionId,
+			model: selectedModelRef.current?.trim() || null,
+			messages: msgs,
+		});
+		if (!opts?.silent) new Notice(`Chat saved: ${file.path}`);
+	};
+
+	const openChatHistory = async () => {
+		if (plugin.bridge.isRunning()) {
+			new Notice("Cursor agent is running");
+			return;
+		}
+
+		const files = await listChatHistoryFiles(
+			plugin.app,
+			plugin.settings.chatHistoryFolder
+		);
+		if (files.length === 0) {
+			new Notice("No saved chats found");
+			return;
+		}
+
+		const modal = new LoadChatHistoryModal(
+			plugin.app,
+			files,
+			async (file) => {
+				const meta = getChatNoteMeta(plugin.app, file);
+				if (!meta.sessionId) {
+					new Notice("Chat note is missing session ID");
+					return;
+				}
+				const content = await plugin.app.vault.read(file);
+				const parsed = parseChatNoteContent(content);
+				if (parsed.length === 0) {
+					new Notice("No messages found in chat note");
+					return;
+				}
+
+				plugin.setActiveSessionId(meta.sessionId);
+				plugin.sessionManager.upsertSession(
+					meta.sessionId,
+					meta.model ?? selectedModelRef.current ?? "",
+					parsed
+				);
+
+				pendingMessagesRef.current = [];
+				lastFinalizedRef.current = "";
+				streamingTextRef.current = "";
+				setContextNotePaths([]);
+				setContextFolderPaths([]);
+				setIncludeActiveNote(false);
+				setStreamingText("");
+				setIsGenerating(false);
+
+				if (meta.model) setSelectedModel(meta.model);
+				reloadHistory();
+				await plugin.saveSettings();
+			}
+		);
+		modal.open();
+	};
+
+	const requestNewConversation = () => {
+		if (plugin.bridge.isRunning()) {
+			new Notice("Cursor agent is running");
+			return;
+		}
+		const hasMessages = plugin.sessionManager.getMessages().length > 0;
+		if (!hasMessages) {
+			newConversation();
+			return;
+		}
+
+		newConversation();
+	};
+
 	const newConversation = () => {
 		if (plugin.bridge.isRunning()) {
 			new Notice("Cursor agent is running");
 			return;
 		}
-		plugin.bridge.setSessionId(null);
+		const hasMessages = plugin.sessionManager.getMessages().length > 0;
+		if (hasMessages && plugin.settings.autosaveChat) {
+			void saveCurrentChatNote({ silent: true });
+		}
+		plugin.setActiveSessionId(null);
 		plugin.sessionManager.clearCurrentSession();
 		pendingMessagesRef.current = [];
 		lastFinalizedRef.current = "";
 		streamingTextRef.current = "";
 		setContextNotePaths([]);
 		setContextFolderPaths([]);
+		setIncludeActiveNote(false);
 		setMessages([]);
 		setStreamingText("");
 		void plugin.saveSettings();
@@ -139,84 +238,33 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		new Notice("Generation stopped");
 	};
 
-	const addContextNotePath = useCallback((path: string) => {
-		setContextNotePaths((prev) =>
-			prev.includes(path) ? prev : [...prev, path]
-		);
-	}, []);
-	const addContextFolderPath = useCallback((path: string) => {
-		setContextFolderPaths((prev) =>
-			prev.includes(path) ? prev : [...prev, path]
-		);
-	}, []);
-	const removeContextNotePath = (path: string) => {
-		setContextNotePaths((prev) => prev.filter((p) => p !== path));
-	};
-	const removeContextFolderPath = (path: string) => {
-		setContextFolderPaths((prev) => prev.filter((p) => p !== path));
-	};
-
-	const detectTrigger = useCallback(
-		(
-			text: string,
-			cursorPos: number
-		): { triggerIdx: number; query: string } | null => {
-			for (let i = cursorPos - 1; i >= 0; i--) {
-				const c = text.charAt(i);
-				if (c === "@") {
-					const prev = i > 0 ? text.charAt(i - 1) : "";
-					if (i === 0 || /\s/.test(prev)) {
-						const query = text.slice(i + 1, cursorPos);
-						if (query.startsWith(" ")) return null;
-						return { triggerIdx: i, query };
-					}
-				} else if (/\s/.test(c)) {
-					break;
-				}
-			}
-			return null;
+	// Pill sync handlers
+	const handleNotesChange = useCallback(
+		(notes: { path: string; title: string }[]) => {
+			setContextNotePaths(notes.map((n) => n.path));
 		},
 		[]
 	);
 
-	const closeMention = useCallback(() => {
-		mentionState.reset();
-		setMentionAnchor(null);
-		setTriggerIndex(null);
-	}, [mentionState]);
+	const handleNotesRemoved = useCallback((paths: string[]) => {
+		setContextNotePaths((prev) => prev.filter((p) => !paths.includes(p)));
+	}, []);
 
-	const onMentionSelect = useCallback(
-		(category: AtMentionCategory, data: unknown) => {
-			const ta = textareaRef.current;
-			if (ta && triggerIndex !== null) {
-				const before = input.slice(0, triggerIndex);
-				const cursorPos = ta.selectionStart ?? input.length;
-				const after = input.slice(cursorPos);
-				setInput(before + after);
-				setTimeout(() => {
-					ta.focus();
-					ta.setSelectionRange(before.length, before.length);
-				}, 0);
-			}
+	const handleFoldersChange = useCallback((paths: string[]) => {
+		setContextFolderPaths(paths);
+	}, []);
 
-			switch (category) {
-				case "activeNote":
-					setIncludeActiveNote(true);
-					break;
-				case "notes":
-				case "folders": {
-					if (!data || typeof data !== "object" || !("path" in data))
-						return;
-					const path = (data as { path?: unknown }).path;
-					if (typeof path !== "string") return;
-					if (category === "notes") addContextNotePath(path);
-					else addContextFolderPath(path);
-					break;
-				}
-			}
-		},
-		[input, triggerIndex, addContextNotePath, addContextFolderPath]
-	);
+	const handleFoldersRemoved = useCallback((paths: string[]) => {
+		setContextFolderPaths((prev) => prev.filter((p) => !paths.includes(p)));
+	}, []);
+
+	const handleActiveNoteAdded = useCallback(() => {
+		setIncludeActiveNote(true);
+	}, []);
+
+	const handleActiveNoteRemoved = useCallback(() => {
+		setIncludeActiveNote(false);
+	}, []);
 
 	const finalizeStreamingMessage = () => {
 		const content = streamingTextRef.current.trim();
@@ -284,6 +332,9 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 	const onResult = (_e: ResultEvent) => {
 		finalizeStreamingMessage();
 		setIsGenerating(false);
+		if (plugin.settings.autosaveChat) {
+			void saveCurrentChatNote({ silent: true });
+		}
 		void plugin.saveSettings();
 	};
 
@@ -312,6 +363,19 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		setStreamingText("");
 		lastFinalizedRef.current = "";
 		setInput("");
+
+		// Clear pills from editor after sending
+		if (editorRef.current) {
+			for (const path of contextNotePaths) {
+				removePillByPath(editorRef.current, path, "note");
+			}
+			for (const path of contextFolderPaths) {
+				removePillByPath(editorRef.current, path, "folder");
+			}
+			if (includeActiveNote) {
+				removePillByPath(editorRef.current, "", "active");
+			}
+		}
 
 		const resumeId = plugin.bridge.getSessionId();
 		if (resumeId && !plugin.sessionManager.getCurrentSession()) {
@@ -346,12 +410,16 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 			),
 		];
 
-		// NOTE: don't include custom instructions here; CursorBridge already injects them.
 		const fullPrompt = buildPrompt(text, {
 			activeFile: includeActiveNote ? activeFile : null,
 			noteContent,
 			contextPaths,
 		});
+
+		// Reset context after building prompt
+		setContextNotePaths([]);
+		setContextFolderPaths([]);
+		setIncludeActiveNote(false);
 
 		plugin.settings.defaultModel = selectedModel;
 		plugin.bridge.updateOptions({ model: selectedModel });
@@ -406,7 +474,6 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 			setActiveFile(isMarkdownFile(f) ? f : null);
 		});
 		return () => {
-			// cspell:disable-next-line
 			plugin.app.workspace.offref(ref);
 		};
 	}, [plugin.app.workspace]);
@@ -415,13 +482,6 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 		<div className="tw-flex tw-size-full tw-flex-col tw-overflow-hidden tw-p-2">
 			<div className="tw-mb-2 tw-flex tw-items-center tw-justify-between">
 				<div className="tw-text-sm tw-font-medium">Cursor agent</div>
-				<Button
-					variant="ghost2"
-					size="fit"
-					onClick={() => newConversation()}
-				>
-					New chat
-				</Button>
 			</div>
 
 			<div className="tw-flex-1 tw-overflow-hidden tw-rounded-md tw-border tw-border-border">
@@ -440,123 +500,68 @@ export default function Chat({ plugin, onApi }: CursorChatProps) {
 						value={selectedModel}
 						onChange={setSelectedModel}
 					/>
+					<div className="tw-flex tw-items-center tw-gap-1">
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost2"
+									size="icon"
+									title="New chat"
+									onClick={() => requestNewConversation()}
+								>
+									<MessageCirclePlus className="tw-size-4" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>New chat</TooltipContent>
+						</Tooltip>
+
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost2"
+									size="icon"
+									title="Save chat as note"
+									disabled={isGenerating}
+									onClick={() => void saveCurrentChatNote()}
+								>
+									<Download className="tw-size-4" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>Save chat as note</TooltipContent>
+						</Tooltip>
+
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button
+									variant="ghost2"
+									size="icon"
+									title="Chat history"
+									disabled={isGenerating}
+									onClick={() => void openChatHistory()}
+								>
+									<History className="tw-size-4" />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>Chat history</TooltipContent>
+						</Tooltip>
+					</div>
 				</div>
 
-				<ChatContextBar
-					disabled={isGenerating}
-					currentActiveFile={activeFile}
-					includeActiveNote={includeActiveNote}
-					onIncludeActiveNoteChange={setIncludeActiveNote}
-					notePaths={contextNotePaths}
-					folderPaths={contextFolderPaths}
-					onAddNotePath={addContextNotePath}
-					onAddFolderPath={addContextFolderPath}
-					onRemoveNotePath={removeContextNotePath}
-					onRemoveFolderPath={removeContextFolderPath}
-				/>
-
-				<AtMentionPortal
-					isOpen={mentionState.isOpen}
-					anchorPosition={mentionAnchor}
-					options={mentionState.options}
-					selectedIndex={mentionState.selectedIndex}
-					onHighlight={mentionState.setSelectedIndex}
-					onOptionSelect={(opt) =>
-						mentionState.handleSelect(
-							opt,
-							onMentionSelect,
-							closeMention
-						)
-					}
-					mode={mentionState.extendedState.mode}
-				/>
-
-				<textarea
-					ref={textareaRef}
-					className="tw-min-h-20 tw-w-full tw-resize-y tw-rounded-md tw-border tw-border-border tw-bg-primary tw-p-2 tw-text-sm"
-					placeholder="Type a message… (@ to mention)"
+				<LexicalChatInput
+					app={plugin.app}
 					value={input}
+					onChange={setInput}
+					onSubmit={() => void sendPrompt(input)}
 					disabled={isGenerating}
-					onChange={(e) => {
-						const newValue = e.target.value;
-						setInput(newValue);
-
-						const ta = textareaRef.current;
-						if (!ta || isGenerating) return;
-
-						const cursorPos = ta.selectionStart ?? newValue.length;
-						const result = detectTrigger(newValue, cursorPos);
-
-						if (result) {
-							const caret = getTextareaCaretCoords(
-								ta,
-								result.triggerIdx
-							);
-							setMentionAnchor({
-								left: caret.left,
-								top: caret.top,
-							});
-							setTriggerIndex(result.triggerIdx);
-							mentionState.setSearchQuery(result.query);
-							if (!mentionState.isOpen) {
-								mentionState.open();
-							}
-						} else if (mentionState.isOpen) {
-							closeMention();
-						}
-					}}
-					onKeyDown={(e) => {
-						if (mentionState.isOpen) {
-							const opts = mentionState.options;
-							switch (e.key) {
-								case "ArrowDown":
-									e.preventDefault();
-									mentionState.setSelectedIndex(
-										Math.min(
-											mentionState.selectedIndex + 1,
-											opts.length - 1
-										)
-									);
-									return;
-								case "ArrowUp":
-									e.preventDefault();
-									mentionState.setSelectedIndex(
-										Math.max(
-											mentionState.selectedIndex - 1,
-											0
-										)
-									);
-									return;
-								case "Enter":
-								case "Tab": {
-									e.preventDefault();
-									const opt =
-										opts[mentionState.selectedIndex];
-									if (opt) {
-										mentionState.handleSelect(
-											opt,
-											onMentionSelect,
-											closeMention
-										);
-									}
-									return;
-								}
-								case "Escape":
-									e.preventDefault();
-									closeMention();
-									return;
-								case "Backspace":
-									if (mentionState.handleBackspace()) {
-										e.preventDefault();
-									}
-									return;
-							}
-						}
-
-						if (e.key === "Enter" && !e.shiftKey) {
-							e.preventDefault();
-							void sendPrompt(input);
-						}
+					activeFile={activeFile}
+					onNotesChange={handleNotesChange}
+					onNotesRemoved={handleNotesRemoved}
+					onFoldersChange={handleFoldersChange}
+					onFoldersRemoved={handleFoldersRemoved}
+					onActiveNoteAdded={handleActiveNoteAdded}
+					onActiveNoteRemoved={handleActiveNoteRemoved}
+					onEditorReady={(editor) => {
+						editorRef.current = editor;
 					}}
 				/>
 
